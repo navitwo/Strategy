@@ -1,0 +1,5 @@
+submitted: 8caa0a9d12a2da4cd47cc8dbaf4c4aba
+COMPLETED
+cloud stats: {"trades": null, "net_profit": "0%", "sharpe": "0", "drawdown": "0%", "total_orders": "0", "fees": "0", "win_rate": "0", "profit_factor": "0", "avg_win": null, "avg_loss": "0"}
+funnel: {"L_attempts": 0, "L_cancel_bias": 0, "L_cancel_expiry": 0, "L_cancel_invalid": 0, "L_cancel_other": 0, "L_cancel_window": 0, "L_cisd_ok": 0, "L_cisd_timeout": 0, "L_depth_rejects": 0, "L_fills": 0, "L_inv_ok": 0, "L_inv_timeout": 0, "L_no_reclaim": 0, "L_size_skips": 0, "L_submits": 0, "L_sweep_ok": 0, "S_attempts": 0, "S_cancel_bias": 0, "S_cancel_expiry": 0, "S_cancel_invalid": 0, "S_cancel_other": 0, "S_cancel_window": 0, "S_cisd_ok": 0, "S_cisd_timeout": 0, "S_depth_rejects": 0, "S_fills": 0, "S_inv_ok": 0, "S_inv_timeout": 0, "S_no_reclaim": 0, "S_size_skips": 0, "S_submits": 0, "S_sweep_ok": 0, "attempts_used": 0, "end_flattens": 0, "eod_flattens": 0, "forced_flattens": 0, "no_bias": 217, "no_prior_levels": 217, "oco_races": 0, "rollovers": 3, "sessions": 217}
+EXIT:0

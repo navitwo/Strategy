@@ -1,0 +1,9 @@
+submitted sig-full 2ac6e4aa46cd9ffa1b1e744808fbac6b
+{"name": "sig-full", "bid": "2ac6e4aa46cd9ffa1b1e744808fbac6b", "trades": "3", "wins": "1", "avg_r": "-0.2139", "pf": "0.7571", "sum_r": "-0.642", "reconcile": {"rec_ok": "0", "rec_exp_usd": "1200.0", "rec_obs_usd": "1650.0", "rec_resid": "450.0", "fills_vs_trades": null}}
+submitted null-full 3e1475f610dd578e50a91f245b35de1a
+{"name": "null-full", "bid": "3e1475f610dd578e50a91f245b35de1a", "trades": "30", "wins": "9", "avg_r": "-0.1216", "pf": "0.8461", "sum_r": "-3.647", "reconcile": {"rec_ok": "0", "rec_exp_usd": "-2700.0", "rec_obs_usd": "400.0", "rec_resid": "3100.0", "fills_vs_trades": null}}
+submitted sig-gapstop 4d5af18c15b5cb6587d40029700c2b57
+{"name": "sig-gapstop", "bid": "4d5af18c15b5cb6587d40029700c2b57", "trades": "2", "wins": "0", "avg_r": "-1.0", "pf": "0.0", "sum_r": "-2.0", "reconcile": {"rec_ok": "0", "rec_exp_usd": "-1350.0", "rec_obs_usd": "-950.0", "rec_resid": "400.0", "fills_vs_trades": null}}
+submitted null-gapstop 3ddc0de6bc590a8e1fb7cff674e90c66
+{"name": "null-gapstop", "bid": "3ddc0de6bc590a8e1fb7cff674e90c66", "trades": "28", "wins": "10", "avg_r": "-0.4412", "pf": "0.5266", "sum_r": "-12.354", "reconcile": {"rec_ok": "0", "rec_exp_usd": "-4450.0", "rec_obs_usd": "-2400.0", "rec_resid": "2050.0", "fills_vs_trades": null}}
+EXIT:0

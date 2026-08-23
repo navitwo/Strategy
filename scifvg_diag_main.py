@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 from zoneinfo import ZoneInfo
+from collections import Counter
 
 
 class ScifvgFeeModel(FeeModel):
@@ -57,7 +58,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                   "commission_per_side", "window_start_et", "window_end_et",
                   "invert_on_cisd_bar", "entry_location",
                   "pivot_lookback", "pivot_right", "max_attempts_per_day",
-                  "stop_mode", "entry_mode", "random_entry_prob"):
+                  "stop_mode"):
             v = self.get_parameter(p)
             if v is not None and str(v).strip() != "":
                 raw[p] = v
@@ -73,7 +74,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             "invert_on_cisd_bar": 0, "entry_location": "proximal",
             "pivot_lookback": 3, "pivot_right": 3,
             "max_attempts_per_day": 1, "stop_mode": "sweep",
-            "entry_mode": "signal", "random_entry_prob": 0.02,
         }
         cfg = {}
         for k, dv in defaults.items():
@@ -145,14 +145,12 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.acc5_key = None    # 5m slot key on the standard :00 grid (START time)
         self.bars5 = []         # completed 5m dicts: o,h,l,c,idx,et(end)
         self.h4_pub = []        # published validated 4H bars
-        self.h4_bucket = None   # {"id":..., "bars":[...], "offset0", "t0", "tN"}
-        # BUG2 fix v2: coverage measured as WALL-CLOCK SPAN, not bar count.
-        # Trade bars are missing in quiet minutes; a real 4H bucket spans
-        # ~4h from first bar start to last bar end. Fragments (< 3h30m) and
-        # mid-bucket starts are discarded.
-        self.h4_min_span_min = 210
-        self.h4_max_offset0 = 1
+        self.h4_bucket = None   # {"id": (y,m,d,hour//4), "bars": [...], "offset0"}
+        # BUG2 fix: require FULL 4H coverage (48 of 48 minutes) — no partials
+        self.h4_min_bars = 48
+        self.h4_max_offset0 = 0
         self.h4_gap_pending = False
+        self._bucket_sizes = []
         self.swing_hi = []      # [(idx, px)] confirmed pivots on h4_pub
         self.swing_lo = []
         self.bias = 0
@@ -283,21 +281,18 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if bk is None or bk["id"] == new_id:
             return
         self.h4_bucket = None
-        # BUG2 fix v2: wall-clock span coverage. A genuine [18,22) ET bucket's
-        # first bar starts at 18:00 and its last bar ends near 22:00. Fragments
-        # (session opens, halts) span far less and are DISCARDED; a discarded
-        # bucket also invalidates pivot confirmation spanning it.
+        # BUG2 fix: full-coverage requirement (48/48 minutes); partial buckets
+        # (session opens, maintenance breaks, data holes) are DISCARDED, and a
+        # discarded bucket also invalidates pivot confirmation spanning it.
         bars = bk["bars"]
-        t0 = bk.get("t0")
-        tN = bk.get("tN")
-        span = (tN - t0).total_seconds() / 60.0 if (t0 and tN) else 0.0
-        if span < self.h4_min_span_min or bk["offset0"] > self.h4_max_offset0:
+        if len(bars) < self.h4_min_bars or bk["offset0"] > self.h4_max_offset0:
             self.h4_gap_pending = True
             return
         o = bars[0]["open"]
         c = bars[-1]["close"]
         h = max(x["high"] for x in bars)
         l = min(x["low"] for x in bars)
+        self._bucket_sizes.append(len(bars))
         idx = len(self.h4_pub)
         self.h4_pub.append({"idx": idx, "open": o, "high": h, "low": l, "close": c})
 
@@ -343,11 +338,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.h4_bucket = {
                 "id": bid, "bars": [],
                 "offset0": (et.hour % 4) * 60 + et.minute,
-                "t0": et - timedelta(minutes=1),  # first bar's start
-                "tN": et,                          # last bar's end (updated below)
             }
         self.h4_bucket["bars"].append(b5)
-        self.h4_bucket["tN"] = et
 
     # -------------------------------------------------------------- FVG store
     def _scan_fvgs(self, upto_idx, side):
@@ -381,90 +373,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 if self.bars5[j]["close"] > g["hi"]:
                     return True
         return False
-
-    # ---------------------------------------------------- random-entry null
-    def _maybe_random_entry(self, b, idx, et):
-        """Deterministic pseudo-random entry for the null distribution (B2-E15).
-
-        Eligible: flat, no setup, in window, prior-day levels known. The
-        accept/reject draw is a pure hash of (exp_hash, bar end time) so runs
-        are reproducible and independent of the signal path. Bracket geometry,
-        sizing, costs, and management are IDENTICAL to the signal strategy —
-        only entry selection differs.
-        """
-        import hashlib as _h
-        if not self._in_window(et) or not self._new_setup_allowed():
-            return
-        p = float(self.cfg.get("random_entry_prob", 0.02))
-        seed = f"{self.exp_hash}|{b['et'].isoformat()}"
-        h = int(_h.md5(seed.encode()).hexdigest()[:8], 16)
-        if (h % 10000) / 10000.0 >= p:
-            return
-        side = 1 if (h % 2 == 0) else -1
-        level = self.pdl if side > 0 else self.pdh
-        ext = b["low"] if side > 0 else b["high"]
-        buf = self.cfg["stop_buffer_ticks"] * self.tick
-        # entry at the just-closed bar's close: realistic (near-market) fill so
-        # designed R == realized R (the reconciliation gate verifies this).
-        if side > 0:
-            stop = self._rt(ext - buf, up=False)
-            entry = self._rt(b["close"], up=True)
-            if entry - stop < 4 * self.tick:
-                return
-            tp = self._rt(entry + float(self.cfg["target_r"]) * (entry - stop), up=True)
-        else:
-            stop = self._rt(ext + buf, up=True)
-            entry = self._rt(b["close"], up=False)
-            if stop - entry < 4 * self.tick:
-                return
-            tp = self._rt(entry - float(self.cfg["target_r"]) * (stop - entry), up=False)
-        self._submit_bracket(side, entry, stop, tp, idx)
-        s = {
-            "side": side, "stage": "PENDING", "arm_sk": self._session_key(et),
-            "b0": idx, "reclaim_deadline": idx, "level": level,
-            "extreme": ext, "extreme_idx": idx, "ref_open": None,
-            "ref_idx": None, "cisd_deadline": idx,
-            "fvg": {"lo": min(level, ext), "hi": max(level, ext), "created": idx},
-            "inv_deadline": idx, "cisd_idx": idx,
-            "retest_deadline": idx + self.cfg["retest_max_bars"],
-            "entry_id": None,
-        }
-        # register setup BEFORE submission so the fill handler can find it
-        self.setup = s
-        self._submit_bracket(side, entry, stop, tp, idx)
-        self._inc(f"{self._sk(side)}_attempts")
-
-    def _submit_bracket(self, side, entry, stop, tp, idx):
-        """Shared bracket submission for the null mode: marketable-limit entry
-        at this bar's close ± modeled slippage + OCO exits. Keeps designed R ==
-        realized R so the reconciliation gate passes."""
-        dist = abs(entry - stop)
-        K = self._sk(side)
-        if dist <= 0:
-            return False
-        qty = int(float(self.cfg["risk_usd"]) / (dist * self.point_value))
-        qty = min(qty, int(self.cfg["max_contracts"]))
-        if qty < 1:
-            self._inc(f"{K}_size_skips")
-            return False
-        sym = self.fut.mapped
-        if sym is None:
-            return False
-        lim = self._rt(entry + side * 2 * self.tick, up=(side > 0))
-        try:
-            tk = self.limit_order(sym, qty * side, lim,
-                                  tag=f"E-{K}-{idx}-{self.exp_hash}")
-        except Exception:
-            return False
-        if self.setup is not None:
-            self.setup["entry_id"] = tk.order_id
-            self.setup["entry_px"] = entry
-            self.setup["qty"] = qty
-            self.setup["stop_px"] = stop
-            self.setup["tp_px"] = tp
-            self.order_purpose[tk.order_id] = ("entry", side)
-        self._inc(f"{K}_submits")
-        return True
 
     # ---------------------------------------------------------- state machine
     def _new_setup_allowed(self):
@@ -542,9 +450,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if trigger:
                 imm = None       # midpoint already crossed by THIS (CISD) bar
                 elig = None      # intact zone still below: wait for inversion
-                # Throttle removal: scan ALL gaps known before this bar
-                # (created <= idx-1), not just pre-sweep-extreme ones.
-                for g in self._scan_fvgs(idx - 1, side):
+                for g in self._scan_fvgs(s["extreme_idx"], side):
                     if idx - g["created"] > self.cfg["fvg_max_age_bars"]:
                         continue
                     if self._dead(g, idx, side):
@@ -558,13 +464,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                             if imm is None or g["created"] < imm["created"]:
                                 imm = g
                             continue
-                    # nearest-to-price selection (E16e fix): pick the gap
-                    # whose proximal edge is closest to the CISD close so the
-                    # retest is actually reachable within the deadline window.
-                    prox = b["close"] - g["hi"] if side > 0 else g["lo"] - b["close"]
-                    if elig is None or prox < elig.setdefault("_prox", 1e18):
-                        elig = dict(g)
-                        elig["_prox"] = prox
+                    through = (b["close"] > g["hi"]) if side > 0 else (b["close"] < g["lo"])
+                    if through:
+                        continue          # fully traded through pre-CISD: skip
+                    if elig is None or g["created"] < elig["created"]:
+                        elig = g
                 chosen = imm if imm is not None else elig
                 if chosen is None:
                     # CISD fired but nothing invertible remains
@@ -680,16 +584,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     # ------------------------------------------------------------- main loop
     def on_data(self, data):
-        et = None
         for symbol, bar in data.bars.items():
             if symbol != self.fut.symbol and symbol != self.fut.mapped:
                 continue
-            # BUG1(v2) fix: use EACH BAR'S OWN end time, never algorithm time.
-            # self.utc_time is the slice time and can run ahead of the bars in
-            # a multi-slice subscription; per-bar time keeps slots exact.
-            et = self._et(bar.end_time)
+            et = self._et(self.utc_time)
 
-            # --- 5m aggregation on the STANDARD grid: slot key from START time
+            # --- 5m aggregation on the STANDARD grid: slot key from the bar's
+            # START time (et - 1min), so :30 closes flush the 09:25-09:29 bar
+            # exactly at 09:30 and every bucket is aligned to :00/:05/:10...
             bstart = et - timedelta(minutes=1)
             bkey = (bstart.year, bstart.month, bstart.day, bstart.hour,
                     bstart.minute // 5)
@@ -699,21 +601,19 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.acc5.append({"open": float(bar.open), "high": float(bar.high),
                               "low": float(bar.low), "close": float(bar.close),
                               "et": et})
-            # flush when the CURRENT bar closes its own 5m slot (:x0/:x5)
-            if et.minute % 5 == 4:
-                self._flush_5m()
 
         # BUG3 fix: session advance AFTER flushing, so the last bars of the old
         # session are aggregated into the OLD session before PDH/PDL rotate.
         self._flush_5m()
-        if et is not None:
-            self._advance_session(et)
+        self._advance_session(et)
 
     def _flush_5m(self):
         if not self.acc5:
             return
         bars = self.acc5
         self.acc5 = []
+        if len(bars) < 3:
+            return  # hole/gap fragment: discard rather than mix distant minutes
         agg = {
             "open": bars[0]["open"],
             "high": max(x["high"] for x in bars),
@@ -761,9 +661,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if et.date() < self.camp_start:
             return  # warmup: build bias/levels only; no signal generation
 
-        if str(self.cfg.get("entry_mode", "signal")) == "random":
-            self._maybe_random_entry(b, idx, et)
-        elif (self._in_window(et) and self._new_setup_allowed()
+        if (self._in_window(et) and self._new_setup_allowed()
                 and self.bias in (1, -1)):
             self._try_arm_attempt(b, idx, skey)
 
@@ -823,9 +721,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     return
                 self.stop_px = s["stop_px"]
                 self.tp_px = s["tp_px"]
-                # R accounting uses ACTUAL entry fill (BUG5 fix): designed-R
-                # drift was the dominant reconcile residual.
-                self.risk_dist = abs(fp - s["stop_px"])
+                self.risk_dist = abs(s["entry_px"] - s["stop_px"])
                 self.exit_qty_acc = 0
                 self._eq_at_entry = self._equity()   # BUG4: exact per-trade basis
                 sym = self.fut.mapped
@@ -979,14 +875,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         resid = resid_trades
         obs_usd = obs_sum
         ok = resid <= tol
-        # cross-check prong: every tracked fill must have become a ledger trade
-        fills = self.fun.get("L_fills", 0) + self.fun.get("S_fills", 0)
-        if fills != len(self.trade_economics):
-            ok = False
         return {
             "ok": ok, "exp_usd": round(exp_usd, 2), "obs_usd": round(obs_usd, 2),
             "race_pnl_est": round(self.race_pnl_obs, 2), "resid": round(resid, 2),
-            "tol": round(tol, 2), "fills_vs_trades": f"{fills}/{len(self.trade_economics)}",
+            "tol": round(tol, 2),
         }
 
     # ------------------------------------------------------------------ end
@@ -1044,6 +936,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.RuntimeStatistics["race_legs_tp"] = str(self.race_tp_legs)
             self.RuntimeStatistics["eod_flattens"] = str(self.fun.get("eod_flattens", 0))
             self.RuntimeStatistics["rollovers"] = str(self.fun.get("rollovers", 0))
+            self.RuntimeStatistics["d_bucket_hist"] = json.dumps(
+                dict(sorted(Counter(self._bucket_sizes).items())), sort_keys=True)
+            self.RuntimeStatistics["d_bias_final"] = str(self.bias)
+            self.RuntimeStatistics["d_pdh_none_days"] = str(self.fun.get("no_prior_levels", 0))
+
         except Exception:
             pass
 

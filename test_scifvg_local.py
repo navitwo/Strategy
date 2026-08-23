@@ -67,6 +67,9 @@ FUNNEL_KEYS = mod.FUNNEL_KEYS
 def make_alg():
     a = Alg.__new__(Alg)
     a.fun = {k: 0 for k in FUNNEL_KEYS}
+    a.h4_min_span_min = 210     # BUG2 wall-clock span gate (set in initialize())
+    a.h4_max_offset0 = 1
+    a.h4_gap_pending = False
     a.cfg = {
         "sweep_min_ticks": 4, "sweep_max_ticks": 96, "reclaim_bars": 3,
         "cisd_max_bars": 12, "inv_max_bars": 12, "retest_max_bars": 24,
@@ -199,23 +202,44 @@ def test_sizing():
 
 
 def feed_h4_buckets(a, levels):
-    """Feed one synthetic 4H bucket per level (8 sub-bars each, offset0=0)."""
+    """Feed one fully-spanning 4H bucket per level (~4h wall-clock each)."""
     from datetime import datetime as dt
     base = dt(2024, 1, 1)
     for k, px in enumerate(levels):
-        et = base + timedelta(hours=4 * k)
-        bid = (et.year, et.month, et.day, et.hour // 4)
-        # publish previous bucket on id change
+        et0 = base + timedelta(hours=4 * k)
+        bid = (et0.year, et0.month, et0.day, et0.hour // 4)
         if a.h4_bucket is not None and a.h4_bucket["id"] != bid:
             a._publish_h4(bid)
         if a.h4_bucket is None or a.h4_bucket["id"] != bid:
-            a.h4_bucket = {"id": bid, "bars": [], "offset0": 0}
-        for _ in range(8):
+            a.h4_bucket = {"id": bid, "bars": [], "offset0": 0,
+                           "t0": et0, "tN": et0}
+        # bars every 5 minutes across the full 4h => span ~235 min
+        for q in range(48):
+            e = et0 + timedelta(minutes=5 * q + 1)
             a.h4_bucket["bars"].append({"open": px, "high": px, "low": px,
-                                        "close": px, "et": et})
-    # final publish
+                                        "close": px, "et": e})
+            a.h4_bucket["tN"] = e
     a._publish_h4((-1, -1, -1, -99))
 
+
+def test_partial_4h_bucket_discarded():
+    from datetime import datetime as dt
+    a = make_alg()
+    feed_h4_buckets(a, [100, 99, 98, 90, 91, 92])   # establish baseline pubs
+    n_before = len(a.h4_pub)
+    # a PARTIAL bucket (only 30 minutes of span) must be discarded
+    et = dt(2024, 1, 2)
+    a.h4_bucket = {"id": (2024, 1, 2, 0), "bars": [], "offset0": 0,
+                   "t0": et, "tN": et}
+    for k in range(6):
+        e = et + timedelta(minutes=5 * k + 1)
+        a.h4_bucket["bars"].append({"open": 50, "high": 50, "low": 50,
+                                    "close": 50, "et": e})
+        a.h4_bucket["tN"] = e
+    a._publish_h4((2024, 1, 2, 9))
+    assert len(a.h4_pub) == n_before, "partial-span bucket must NOT publish"
+    assert a.h4_gap_pending is True, "gap flag must invalidate next confirmation"
+    print("PASS partial 4H bucket discarded + gap invalidation")
 
 def test_bias_symmetry():
     a = make_alg()
@@ -266,4 +290,5 @@ if __name__ == "__main__":
     test_no_reclaim_times_out()
     test_bias_symmetry()
     test_fvg_orientation_symmetry()
+    test_partial_4h_bucket_discarded()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")

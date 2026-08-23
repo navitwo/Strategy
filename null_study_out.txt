@@ -1,0 +1,95 @@
+{
+ "name": "B2E15-full-signal",
+ "backtest_id": "ac3b90fdd3c831ee46c5d94f592f5057",
+ "params": {
+  "start_date": "2015-01-01",
+  "end_date": "2024-12-31",
+  "run_segment": "full",
+  "invert_on_cisd_bar": "1"
+ },
+ "r_trades": 4,
+ "r_wins": 1,
+ "r_avg": -0.4206,
+ "r_pf": 0.5431,
+ "r_sum": -1.683,
+ "reconcile": {
+  "rec_ok": "0",
+  "rec_exp_usd": "-164.0",
+  "rec_obs_usd": "-261.5",
+  "rec_resid": "97.5",
+  "fills_vs_trades": null
+ }
+}
+{
+ "name": "B2E15-no-bias-gate",
+ "backtest_id": "eea6d3e824f415f25f80e49b3ec4d38a",
+ "params": {
+  "start_date": "2015-01-01",
+  "end_date": "2024-12-31",
+  "run_segment": "full",
+  "invert_on_cisd_bar": "1",
+  "entry_mode": "random",
+  "random_entry_prob": "0.006"
+ },
+ "r_trades": 200,
+ "r_wins": 62,
+ "r_avg": -0.5944,
+ "r_pf": 0.4861,
+ "r_sum": -118.887,
+ "reconcile": {
+  "rec_ok": "0",
+  "rec_exp_usd": "-4846.5",
+  "rec_obs_usd": "-2992.94",
+  "rec_resid": "1853.56",
+  "fills_vs_trades": null
+ }
+}
+{
+ "name": "B2E15-gap-stop",
+ "backtest_id": "7448c475137f3a8ef65edb042f735f23",
+ "params": {
+  "start_date": "2015-01-01",
+  "end_date": "2024-12-31",
+  "run_segment": "full",
+  "invert_on_cisd_bar": "1",
+  "stop_mode": "gap"
+ },
+ "r_trades": 4,
+ "r_wins": 1,
+ "r_avg": -0.6538,
+ "r_pf": 0.4333,
+ "r_sum": -2.615,
+ "reconcile": {
+  "rec_ok": "0",
+  "rec_exp_usd": "-155.0",
+  "rec_obs_usd": "-380.0",
+  "rec_resid": "225.0",
+  "fills_vs_trades": null
+ }
+}
+{
+ "name": "B2E15-null-gap-stop",
+ "backtest_id": "fe4b4c2e66e80119df624c2158e7789a",
+ "params": {
+  "start_date": "2015-01-01",
+  "end_date": "2024-12-31",
+  "run_segment": "full",
+  "invert_on_cisd_bar": "1",
+  "stop_mode": "gap",
+  "entry_mode": "random",
+  "random_entry_prob": "0.008"
+ },
+ "r_trades": 301,
+ "r_wins": 95,
+ "r_avg": -0.683,
+ "r_pf": 0.4569,
+ "r_sum": -205.589,
+ "reconcile": {
+  "rec_ok": "0",
+  "rec_exp_usd": "-10414.0",
+  "rec_obs_usd": "-7971.22",
+  "rec_resid": "2442.78",
+  "fills_vs_trades": null
+ }
+}
+EXIT:0

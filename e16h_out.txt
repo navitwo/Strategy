@@ -1,0 +1,5 @@
+submitted E16h-null 745dea1dfcffe79f81d4172b0852dedc
+{"name": "E16h-null", "bid": "745dea1dfcffe79f81d4172b0852dedc", "trades": "21", "wins": "6", "avg_r": "-0.5535", "sum_r": "-11.623", "rec_ok": "0"}
+submitted E16h-null-gap 90581af6e4ffbb02ce73150add5824b3
+{"name": "E16h-null-gap", "bid": "90581af6e4ffbb02ce73150add5824b3", "trades": "9", "wins": "3", "avg_r": "-0.5526", "sum_r": "-4.973", "rec_ok": "0"}
+EXIT:0

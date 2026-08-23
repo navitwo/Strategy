@@ -1,0 +1,4 @@
+{"name": "E16c-sig", "bid": "a2b7b9e754973a3e3683b6319ea660be", "trades": "3", "wins": "1", "avg_r": "-0.2139", "pf": "0.7571", "sum_r": "-0.642", "rec_ok": "0", "rec_exp": "1200.0", "rec_obs": "1650.0", "rec_resid": "450.0"}
+{"name": "E16c-null", "bid": "6849cd9c0a38a7ed828729a583ce3b98", "trades": "36", "wins": "9", "avg_r": "-0.6181", "pf": "0.3504", "sum_r": "-22.253", "rec_ok": "0", "rec_exp": "-7950.0", "rec_obs": "-7243.0", "rec_resid": "707.0"}
+{"name": "E16c-sig-gap", "bid": "5114c3f63b66e13f3aa6d9854c4d0352", "trades": "2", "wins": "0", "avg_r": "-1.0", "pf": "0.0", "sum_r": "-2.0", "rec_ok": "0", "rec_exp": "-1350.0", "rec_obs": "-950.0", "rec_resid": "400.0"}
+{"name": "E16c-null-gap", "bid": "dd23794bb17a2db770eb70d1efe64058", "trades": "82", "wins": "28", "avg_r": "-0.2664", "pf": "0.6756", "sum_r": "-21.843", "rec_ok": "0", "rec_exp": "-6950.0", "rec_obs": "-3172.0", "rec_resid": "3778.0"}

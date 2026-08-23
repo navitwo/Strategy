@@ -1,0 +1,5 @@
+submitted E16f-sig 23593a9b4b377b62c6d653a39d9ed871
+{"name": "E16f-sig", "bid": "23593a9b4b377b62c6d653a39d9ed871", "trades": "3", "wins": "1", "avg_r": "-0.2139", "pf": "0.7571", "sum_r": "-0.642", "rec_ok": "0", "L_inv_ok": "7", "S_inv_ok": "6"}
+submitted E16f-sig-gap 48c44e1726953ffcc17d395c12e7a8d6
+{"name": "E16f-sig-gap", "bid": "48c44e1726953ffcc17d395c12e7a8d6", "trades": "2", "wins": "0", "avg_r": "-1.0", "pf": "0.0", "sum_r": "-2.0", "rec_ok": "0", "L_inv_ok": "7", "S_inv_ok": "6"}
+EXIT:0

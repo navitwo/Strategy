@@ -1,0 +1,6 @@
+null-engine variant written
+compile ok: True BuildSuccess
+NOTE: compile_id.txt now points at NULL build — flip main.py back before signal runs
+submitted: 1d132be5cab377eb110f3eb3e37d9fd8
+{'r_trades': '0', 'r_wins': '0', 'r_avg': '0.0', 'r_sum': '0', 'rec_ok': '1'}
+EXIT:0

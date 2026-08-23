@@ -1,0 +1,5 @@
+submitted 0.02 78ca1a21b991fec2b318ed03f4cf72b0
+{"p": "0.02", "trades": "38", "wins": "11", "avg_r": "-0.4388", "sum_r": "-16.673", "rec_ok": "0"}
+submitted 0.04 03d103a4f025aeeee3582b24b24350f1
+{"p": "0.04", "trades": "61", "wins": "16", "avg_r": "-0.5634", "sum_r": "-34.368", "rec_ok": "0"}
+EXIT:0

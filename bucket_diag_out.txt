@@ -1,0 +1,8 @@
+instrumented copy written
+compile ok: True
+submitted: 4d6b52b49c36e5f24ce724f3b4603d06
+h4_published: 0
+bucket_hist: None
+bias_final: None
+r_trades: 0 | L_attempts: 0
+EXIT:0

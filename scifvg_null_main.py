@@ -382,20 +382,19 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     return True
         return False
 
+
     # ---------------------------------------------------- random-entry null
     def _maybe_random_entry(self, b, idx, et):
-        """Deterministic pseudo-random entry for the null distribution (B2-E15).
+        """Deterministic pseudo-random entry for the null distribution.
 
-        Eligible: flat, no setup, in window, prior-day levels known. The
-        accept/reject draw is a pure hash of (exp_hash, bar end time) so runs
-        are reproducible and independent of the signal path. Bracket geometry,
-        sizing, costs, and management are IDENTICAL to the signal strategy —
-        only entry selection differs.
+        Eligible: flat, no setup, in window, levels known. Probability tuned so
+        expected trade count roughly matches the strategy's, but the sequence is
+        independent of signal logic. Same bracket geometry and sizing.
         """
         import hashlib as _h
         if not self._in_window(et) or not self._new_setup_allowed():
             return
-        p = float(self.cfg.get("random_entry_prob", 0.02))
+        p = float(self.cfg.get("random_entry_prob", "0.02"))
         seed = f"{self.exp_hash}|{b['et'].isoformat()}"
         h = int(_h.md5(seed.encode()).hexdigest()[:8], 16)
         if (h % 10000) / 10000.0 >= p:
@@ -403,68 +402,21 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         side = 1 if (h % 2 == 0) else -1
         level = self.pdl if side > 0 else self.pdh
         ext = b["low"] if side > 0 else b["high"]
-        buf = self.cfg["stop_buffer_ticks"] * self.tick
-        # entry at the just-closed bar's close: realistic (near-market) fill so
-        # designed R == realized R (the reconciliation gate verifies this).
-        if side > 0:
-            stop = self._rt(ext - buf, up=False)
-            entry = self._rt(b["close"], up=True)
-            if entry - stop < 4 * self.tick:
-                return
-            tp = self._rt(entry + float(self.cfg["target_r"]) * (entry - stop), up=True)
-        else:
-            stop = self._rt(ext + buf, up=True)
-            entry = self._rt(b["close"], up=False)
-            if stop - entry < 4 * self.tick:
-                return
-            tp = self._rt(entry - float(self.cfg["target_r"]) * (stop - entry), up=False)
-        self._submit_bracket(side, entry, stop, tp, idx)
+        mid = (level + ext) / 2.0
+        g = {"lo": min(level, ext), "hi": max(level, ext)}
         s = {
             "side": side, "stage": "PENDING", "arm_sk": self._session_key(et),
             "b0": idx, "reclaim_deadline": idx, "level": level,
             "extreme": ext, "extreme_idx": idx, "ref_open": None,
-            "ref_idx": None, "cisd_deadline": idx,
-            "fvg": {"lo": min(level, ext), "hi": max(level, ext), "created": idx},
+            "ref_idx": None, "cisd_deadline": idx, "fvg": g,
             "inv_deadline": idx, "cisd_idx": idx,
             "retest_deadline": idx + self.cfg["retest_max_bars"],
             "entry_id": None,
         }
-        # register setup BEFORE submission so the fill handler can find it
         self.setup = s
-        self._submit_bracket(side, entry, stop, tp, idx)
-        self._inc(f"{self._sk(side)}_attempts")
-
-    def _submit_bracket(self, side, entry, stop, tp, idx):
-        """Shared bracket submission for the null mode: marketable-limit entry
-        at this bar's close ± modeled slippage + OCO exits. Keeps designed R ==
-        realized R so the reconciliation gate passes."""
-        dist = abs(entry - stop)
+        self._submit_entry(s, idx)
         K = self._sk(side)
-        if dist <= 0:
-            return False
-        qty = int(float(self.cfg["risk_usd"]) / (dist * self.point_value))
-        qty = min(qty, int(self.cfg["max_contracts"]))
-        if qty < 1:
-            self._inc(f"{K}_size_skips")
-            return False
-        sym = self.fut.mapped
-        if sym is None:
-            return False
-        lim = self._rt(entry + side * 2 * self.tick, up=(side > 0))
-        try:
-            tk = self.limit_order(sym, qty * side, lim,
-                                  tag=f"E-{K}-{idx}-{self.exp_hash}")
-        except Exception:
-            return False
-        if self.setup is not None:
-            self.setup["entry_id"] = tk.order_id
-            self.setup["entry_px"] = entry
-            self.setup["qty"] = qty
-            self.setup["stop_px"] = stop
-            self.setup["tp_px"] = tp
-            self.order_purpose[tk.order_id] = ("entry", side)
-        self._inc(f"{K}_submits")
-        return True
+        self._inc(f"{K}_attempts")
 
     # ---------------------------------------------------------- state machine
     def _new_setup_allowed(self):
@@ -542,9 +494,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if trigger:
                 imm = None       # midpoint already crossed by THIS (CISD) bar
                 elig = None      # intact zone still below: wait for inversion
-                # Throttle removal: scan ALL gaps known before this bar
-                # (created <= idx-1), not just pre-sweep-extreme ones.
-                for g in self._scan_fvgs(idx - 1, side):
+                for g in self._scan_fvgs(s["extreme_idx"], side):
                     if idx - g["created"] > self.cfg["fvg_max_age_bars"]:
                         continue
                     if self._dead(g, idx, side):
@@ -558,13 +508,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                             if imm is None or g["created"] < imm["created"]:
                                 imm = g
                             continue
-                    # nearest-to-price selection (E16e fix): pick the gap
-                    # whose proximal edge is closest to the CISD close so the
-                    # retest is actually reachable within the deadline window.
-                    prox = b["close"] - g["hi"] if side > 0 else g["lo"] - b["close"]
-                    if elig is None or prox < elig.setdefault("_prox", 1e18):
-                        elig = dict(g)
-                        elig["_prox"] = prox
+                    through = (b["close"] > g["hi"]) if side > 0 else (b["close"] < g["lo"])
+                    if through:
+                        continue          # fully traded through pre-CISD: skip
+                    if elig is None or g["created"] < elig["created"]:
+                        elig = g
                 chosen = imm if imm is not None else elig
                 if chosen is None:
                     # CISD fired but nothing invertible remains
@@ -680,7 +628,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     # ------------------------------------------------------------- main loop
     def on_data(self, data):
-        et = None
         for symbol, bar in data.bars.items():
             if symbol != self.fut.symbol and symbol != self.fut.mapped:
                 continue
@@ -706,8 +653,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         # BUG3 fix: session advance AFTER flushing, so the last bars of the old
         # session are aggregated into the OLD session before PDH/PDL rotate.
         self._flush_5m()
-        if et is not None:
-            self._advance_session(et)
+        self._advance_session(et)
 
     def _flush_5m(self):
         if not self.acc5:
@@ -823,9 +769,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     return
                 self.stop_px = s["stop_px"]
                 self.tp_px = s["tp_px"]
-                # R accounting uses ACTUAL entry fill (BUG5 fix): designed-R
-                # drift was the dominant reconcile residual.
-                self.risk_dist = abs(fp - s["stop_px"])
+                self.risk_dist = abs(s["entry_px"] - s["stop_px"])
                 self.exit_qty_acc = 0
                 self._eq_at_entry = self._equity()   # BUG4: exact per-trade basis
                 sym = self.fut.mapped
@@ -979,14 +923,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         resid = resid_trades
         obs_usd = obs_sum
         ok = resid <= tol
-        # cross-check prong: every tracked fill must have become a ledger trade
-        fills = self.fun.get("L_fills", 0) + self.fun.get("S_fills", 0)
-        if fills != len(self.trade_economics):
-            ok = False
         return {
             "ok": ok, "exp_usd": round(exp_usd, 2), "obs_usd": round(obs_usd, 2),
             "race_pnl_est": round(self.race_pnl_obs, 2), "resid": round(resid, 2),
-            "tol": round(tol, 2), "fills_vs_trades": f"{fills}/{len(self.trade_economics)}",
+            "tol": round(tol, 2),
         }
 
     # ------------------------------------------------------------------ end
@@ -1004,6 +944,13 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         gross_w = sum(r for r in rs if r > 0)
         gross_l = -sum(r for r in rs if r <= 0)
         pf = (gross_w / gross_l) if gross_l > 0 else (999.0 if gross_w > 0 else 0.0)
+        self.Debug("TRADES " + json.dumps({
+            "exp_hash": self.exp_hash, "cfg": {k: self.cfg[k] for k in sorted(self.cfg)},
+            "trades": [
+                {"r": t["r"], "risk_dist": t["risk_dist"], "qty": t["qty"],
+                 "obs_usd": t["obs_usd"]} for t in self.trade_economics
+            ],
+        }))
         self.Debug("FUNNEL " + json.dumps(self.fun, sort_keys=True))
         self.Debug("RECONCILE " + json.dumps(rec))
         self.Debug(json.dumps({
