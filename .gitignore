@@ -1,0 +1,21 @@
+# Secrets — NEVER commit
+quantconnect_credentials.env
+*.env
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# OS junk
+Thumbs.db
+.DS_Store
+desktop.ini
+
+# Editors
+.vscode/
+.idea/

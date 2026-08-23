@@ -1,0 +1,5 @@
+submitted: fcd6e7e99487f7f5ebd1a429c5e1061d
+COMPLETED
+cloud stats: {"trades": null, "net_profit": "24.246%", "sharpe": "0.176", "drawdown": "8.200%", "total_orders": "21", "fees": "21.66", "win_rate": "0.5455", "profit_factor": "17.2523", "avg_win": null, "avg_loss": "-149.4500"}
+funnel: {"L_attempts": 73, "L_cancel_bias": 0, "L_cancel_expiry": 1, "L_cancel_invalid": 0, "L_cancel_other": 0, "L_cancel_window": 2, "L_cisd_ok": 18, "L_cisd_timeout": 8, "L_depth_rejects": 35, "L_fills": 4, "L_inv_ok": 5, "L_inv_timeout": 13, "L_no_reclaim": 10, "L_size_skips": 0, "L_submits": 5, "L_sweep_ok": 28, "S_attempts": 68, "S_cancel_bias": 0, "S_cancel_expiry": 0, "S_cancel_invalid": 0, "S_cancel_other": 0, "S_cancel_window": 4, "S_cisd_ok": 17, "S_cisd_timeout": 6, "S_depth_rejects": 32, "S_fills": 1, "S_inv_ok": 3, "S_inv_timeout": 12, "S_no_reclaim": 11, "S_size_skips": 2, "S_submits": 1, "S_sweep_ok": 25, "attempts_used": 141, "end_flattens": 0, "forced_flattens": 0, "no_bias": 4, "no_prior_levels": 1, "oco_races": 4, "rollovers": 0, "sessions": 631}
+EXIT:0
