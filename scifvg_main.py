@@ -245,6 +245,38 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if skey is None or skey == self.cur_session:
             return
 
+        # --- EOD: resolve any open atomic cycle at last mark (v2.4) ---
+        if self.pos_side != 0 and self.risk_dist and self.entry_avg is not None:
+            side = self.pos_side
+            exit_px = getattr(self, "_last_min_close", None) or self.entry_avg
+            r_contrib = ((exit_px - self.entry_avg) / self.risk_dist) * side
+            cid = f"{self.exp_hash}-{getattr(self, '_cycle_seq', 0)}"
+            self.trade_economics.append({
+                "cycle_id": cid,
+                "candidate": str(self.cfg.get("variant", "candidate")),
+                "side": side,
+                "entry_px": round(self.entry_avg, 2),
+                "entry_time": getattr(self, "_cyc_entry_ts", None),
+                "exit_px": round(exit_px, 2),
+                "exit_time": str(et),
+                "exit_kind": "eod",
+                "r": round(r_contrib, 4),
+                "risk_dist": round(self.risk_dist, 4),
+                "qty": self.pos_qty,
+                "mfe_r": round(getattr(self, "_cyc_mfe", 0.0) / self.risk_dist, 4),
+                "mae_r": round(getattr(self, "_cyc_mae", 0.0) / self.risk_dist, 4),
+                "is_race": False,
+                "resolved": "eod_mark",
+            })
+            self.trade_rs.append(round(r_contrib, 4))
+            self.fun["r_trades"] = self.fun.get("r_trades", 0) + 1
+            if r_contrib > 0:
+                self.fun["r_wins"] = self.fun.get("r_wins", 0) + 1
+            self._inc(f"{self._sk(side)}_exits_eod")
+            self._inc("atomic_exits")
+        elif self.pos_side != 0:
+            self._inc("anomalous_exit_events")
+
         # --- EOD flatten: no overnight positions across session boundaries ---
         try:
             held = self.portfolio[self.fut.mapped].quantity
@@ -316,10 +348,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if bk is None or bk["id"] == new_id:
             return
         self.h4_bucket = None
-        # BUG2 fix v2: wall-clock span coverage. A genuine [18,22) ET bucket's
-        # first bar starts at 18:00 and its last bar ends near 22:00. Fragments
-        # (session opens, halts) span far less and are DISCARDED; a discarded
-        # bucket also invalidates pivot confirmation spanning it.
+        # [see PROTOCOL_CONFORMANCE.md for rationale]
         bars = bk["bars"]
         t0 = bk.get("t0")
         tN = bk.get("tN")
@@ -334,10 +363,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         idx = len(self.h4_pub)
         self.h4_pub.append({"idx": idx, "open": o, "high": h, "low": l, "close": c})
 
-        # BUG2 fix: a pivot is only confirmed if all its bars were published
-        # CONTIGUOUSLY (no discarded bucket in between). Timing is unchanged:
-        # candidate sits at ci = idx-(Rn+1); its Rn right-side bars are already
-        # in h4_pub strictly before this publish.
+        # [see PROTOCOL_CONFORMANCE.md for rationale]
         if self.h4_gap_pending:
             self.h4_gap_pending = False   # consume: this bar cannot confirm pivots
         else:
@@ -743,6 +769,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         for symbol, bar in data.bars.items():
             if symbol != self.fut.symbol and symbol != self.fut.mapped:
                 continue
+            self._last_min_close = float(bar.close)
             if self.pos_side != 0:
                 try:
                     et = bar.end_time.astimezone(self._ny_tz()) \
@@ -901,10 +928,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             fp = float(order_event.fill_price)
             self._n_fill_events = getattr(self, "_n_fill_events", 0) + 1
             if purpose and purpose[0] == "flatten":
-                # Flatten fills CLOSE the position: they are exits of the open
-                # design trade and MUST produce a ledger row (review round 3:
-                # five silent flatten exits tripped fills-vs-trades). Row uses
-                # actual fill economics with exit_reason for auditability.
+                # [see PROTOCOL_CONFORMANCE.md for rationale]
                 self._inc("flatten_fills")
                 self.order_purpose.pop(oid, None)
                 if self.pos_side != 0 and self.risk_dist:
@@ -958,10 +982,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         self.fun.get("late_closes", 0) + 1
                     return
                 if self.pos_side == 0 and self.exit_qty_acc == 0:
-                    # fill event outside any tracked context (race residue,
-                    # duplicate partial accounting). Its economics are REAL:
-                    # measure via equity delta and park in race_pnl_obs so I1
-                    # nets it out instead of silently vanishing.
+                    # [see PROTOCOL_CONFORMANCE.md for rationale]
                     eq = self._equity()
                     held = 0
                     try:
@@ -1024,10 +1045,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self.exit_qty_acc = 0
                 self._eq_at_entry = self._equity()
                 self._row_written = False
-                # v2.4 ATOMIC BRACKET SIMULATOR: no live stop/tp orders. The
-                # cycle resolves against raw minute bars (pessimistic
-                # stop-first on same-bar ambiguity) in _resolve_cycle_minute,
-                # guaranteeing exactly one economic exit per cycle.
+                # [see PROTOCOL_CONFORMANCE.md for rationale]
                 self._cycle_seq = getattr(self, "_cycle_seq", 0) + 1
                 self._cyc_mfe = 0.0
                 self._cyc_mae = 0.0
@@ -1232,12 +1250,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         lates = self.fun.get("late_fill_events", 0)
         flatfills = self.fun.get("flatten_fills", 0)
         late_closes = self.fun.get("late_closes", 0)
-        # Count identity (I3): every entry must be explained by a ledger row,
-        # an orphan registration, or a measured late close. OCO-race legs are
-        # excluded by construction (their economics flow through I1 netting).
-        # v2.4 STRICT IDENTITIES: the atomic simulator must produce exactly
-        # one exit per cycle and zero unexplained events. Races are
-        # structurally impossible (no live stop/tp orders).
+        # [see PROTOCOL_CONFORMANCE.md for rationale]
         cycles_opened = self.fun.get("L_cycles_opened", 0) + \
             self.fun.get("S_cycles_opened", 0)
         atomic_exits = self.fun.get("atomic_exits", 0)

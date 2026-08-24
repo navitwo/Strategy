@@ -1,0 +1,7 @@
+submitted E18S-candidate 79362e9e5ca8e2b6a20f92e319402e4e
+{"name": "E18S-candidate", "r_trades": "48", "r_wins": "11", "r_avg": "-0.3333", "r_pf": "0.5676", "r_avgwin": "1.9091", "r_avgloss": "-1.0", "rec_ok": "0", "rec_i1_resid": "0.0", "f_anomalous_exit_events": "0", "d_cycles_opened": "54", "d_atomic_exits": "48", "f_untracked_fills": "0", "f_late_fill_events": "55", "bars_per_session": "272.3"}
+submitted E18S-shadowMOC 8d3f621df6e4d44f49ce5471c4105fe8
+{"name": "E18S-shadowMOC", "r_trades": "63", "r_wins": "20", "r_avg": "-0.682", "r_pf": "0.2378", "r_avgwin": "0.6703", "r_avgloss": "-1.3109", "rec_ok": "0", "rec_i1_resid": "0.0", "f_anomalous_exit_events": "0", "d_cycles_opened": "70", "d_atomic_exits": "63", "f_untracked_fills": "0", "f_late_fill_events": "70", "bars_per_session": "272.3"}
+submitted E18S-ablCISD f7a155ac98b1e8a5f663c0cec6381029
+{"name": "E18S-ablCISD", "r_trades": "53", "r_wins": "11", "r_avg": "-0.3774", "r_pf": "0.5238", "r_avgwin": "2.0", "r_avgloss": "-1.0", "rec_ok": "0", "rec_i1_resid": "0.0", "f_anomalous_exit_events": "0", "d_cycles_opened": "60", "d_atomic_exits": "53", "f_untracked_fills": "0", "f_late_fill_events": "61", "bars_per_session": "272.3"}
+submitted E18S-ablFVG 69aaf199baf364ee930ff4132968c74d
