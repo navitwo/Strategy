@@ -1,6 +1,4 @@
-# SCIFVG v1.0 CONTROL — Sweep -> CISD -> IFVG -> Retest | NQ/MNQ futures
-# Protocol: PROTOCOL.md (frozen 2026-08-23). Completed 5m bars only. No lookahead.
-# Signals: continuous canonical series (RAW, OI mapping). Orders: mapped contract.
+# [see PROTOCOL_CONFORMANCE.md]
 from AlgorithmImports import *
 
 from datetime import timedelta
@@ -153,10 +151,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.bars5 = []         # completed 5m dicts: o,h,l,c,idx,et(end)
         self.h4_pub = []        # published validated 4H bars
         self.h4_bucket = None   # {"id":..., "bars":[...], "offset0", "t0", "tN"}
-        # BUG2 fix v2: coverage measured as WALL-CLOCK SPAN, not bar count.
-        # Trade bars are missing in quiet minutes; a real 4H bucket spans
-        # ~4h from first bar start to last bar end. Fragments (< 3h30m) and
-        # mid-bucket starts are discarded.
+        # [see PROTOCOL_CONFORMANCE.md]
         self.h4_min_span_min = 210
         self.h4_max_offset0 = 5   # first slot may open up to :05 into bucket
         self.h4_gap_pending = False
@@ -400,10 +395,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.bias = -1
 
     def _accumulate_h4(self, b5):
-        # 4H buckets keyed by the bar's START time so offset0 is measured from
-        # the true bucket start (commit-coupled with the consolidate() fix:
-        # with END-time keys and exact 5m boundaries, offset0 would be 300 min
-        # and every bucket would be rejected).
+        # [see PROTOCOL_CONFORMANCE.md]
         st = b5["et"] - timedelta(minutes=5)
         bid = (st.year, st.month, st.day, st.hour // 4)
         if self.h4_bucket is None or self.h4_bucket["id"] != bid:
@@ -935,9 +927,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if purpose and purpose[0] == "flatten":
                 self._inc("flatten_fills")
                 self.order_purpose.pop(oid, None)
-                # v2.4 dedup: if this cycle already has an atomic/eod row,
-                # the flatten fill is redundant execution noise (the atomic
-                # exit happened moments earlier; LEAN's position view lagged).
+                # v2.4: redundant flatten after atomic exit (LEAN lag)
                 _cid = f"{getattr(self, 'exp_hash', '')}-{getattr(self, '_cycle_seq', 0)}"
                 already_rowed = any(t.get("cycle_id") == _cid
                                     for t in self.trade_economics)
