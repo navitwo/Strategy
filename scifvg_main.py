@@ -196,6 +196,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         except Exception:
             return 0.0
 
+        self._starting_tpv = float(self.portfolio.total_portfolio_value)
         self.Debug(f"SCIFVG init {cfg['instrument']} trade {start}..{end} "
                    f"warmup_from={ws.isoformat()} win={cfg['window_start_et']}-"
                    f"{cfg['window_end_et']} hash={self.exp_hash}")
@@ -442,9 +443,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._inc(f"{self._sk(side)}_attempts")
 
     def _submit_bracket(self, side, entry, stop, tp, idx):
-        """Shared bracket submission for the null mode: marketable-limit entry
-        at this bar's close ± modeled slippage + OCO exits. Keeps designed R ==
-        realized R so the reconciliation gate passes."""
+        """Null-mode bracket: PASSIVE limit at the level edge (same entry style
+        as the signal path) + OCO exits. Entry parity matters: a marketable
+        entry would hand the null ~0.45R of bracket asymmetry and invalidate
+        the comparison (review round 3)."""
         dist = abs(entry - stop)
         K = self._sk(side)
         if dist <= 0:
@@ -457,7 +459,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         sym = self.fut.mapped
         if sym is None:
             return False
-        lim = self._rt(entry + side * 2 * self.tick, up=(side > 0))
+        # passive limit AT the designed entry price; no marketable offset
+        lim = self._rt(entry, up=(side > 0))
         try:
             tk = self.limit_order(sym, qty * side, lim,
                                   tag=f"E-{K}-{idx}-{self.exp_hash}")
@@ -677,6 +680,16 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
     def _cancel_pending(self, counter):
         s = self.setup
         if s and s.get("entry_id") is not None:
+            # adverse-selection instrument: if this entry never filled, watch
+            # its bracket forward — would it have won? (review round 3)
+            if s.get("entry_px") is not None:
+                self.unfilled_watch.append({
+                    "side": s["side"], "entry": s["entry_px"],
+                    "stop": s["stop_px"], "tp": s["tp_px"],
+                    "deadline": self.bars5[-1]["idx"] + self.cfg["retest_max_bars"]
+                    if self.bars5 else None,
+                })
+                self._inc(f"{self._sk(s['side'])}_unfilled_watched")
             try:
                 t = self.transactions.get_order_by_id(s["entry_id"])
                 if t is not None and t.status == OrderStatus.SUBMITTED \
@@ -750,6 +763,28 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
         self._accumulate_h4(agg)
 
+        # resolve unfilled-entry watches: first touch of TP or stop wins/loses
+        if self.unfilled_watch:
+            still = []
+            for w in self.unfilled_watch:
+                hit_tp = agg["high"] >= w["tp"] if w["side"] > 0 \
+                    else agg["low"] <= w["tp"]
+                hit_st = agg["low"] <= w["stop"] if w["side"] > 0 \
+                    else agg["high"] >= w["stop"]
+                if hit_tp or hit_st:
+                    self.fun["unfilled_won"] = self.fun.get("unfilled_won", 0) \
+                        + (1 if hit_tp else 0)
+                    self.fun["unfilled_lost"] = self.fun.get("unfilled_lost", 0) \
+                        + (1 if hit_st else 0)
+                    self.unfilled_resolved_n += 1
+                elif w["deadline"] is not None and idx >= w["deadline"]:
+                    self.fun["unfilled_timeout"] = \
+                        self.fun.get("unfilled_timeout", 0) + 1
+                    self.unfilled_resolved_n += 1
+                else:
+                    still.append(w)
+            self.unfilled_watch = still
+
         if self.setup is not None and self.setup["stage"] == "PENDING" \
                 and self.pos_qty == 0:
             self._manage_pending(agg, agg["idx"], et, skey)
@@ -811,11 +846,36 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             fq = abs(order_event.fill_quantity)
             fp = float(order_event.fill_price)
             if purpose and purpose[0] == "flatten":
-                # Flatten fills close residual exposure; they are not design
-                # trades. Record them so fills==trades cross-check stays true
-                # (flatten orders ARE registered in order_purpose).
+                # Flatten fills CLOSE the position: they are exits of the open
+                # design trade and MUST produce a ledger row (review round 3:
+                # five silent flatten exits tripped fills-vs-trades). Row uses
+                # actual fill economics with exit_reason for auditability.
                 self._inc("flatten_fills")
                 self.order_purpose.pop(oid, None)
+                if self.pos_side != 0 and self.risk_dist:
+                    side = self.pos_side
+                    r_contrib = ((fp - self.entry_avg) / self.risk_dist) * side
+                    self.exit_qty_acc += fq
+                    self.trade_economics.append({
+                        "r": round(r_contrib, 4),
+                        "risk_dist": self.risk_dist,
+                        "qty": fq,
+                        "obs_usd": 0.0,      # filled by equity delta below
+                    })
+                    t = self.trade_economics[-1]
+                    eq_now = self._equity()
+                    t["obs_usd"] = round(eq_now - (self._eq_at_entry or eq_now), 2)
+                    self._eq_at_entry = eq_now
+                    if self.exit_qty_acc >= self.pos_qty:
+                        self.fun["r_trades"] = self.fun.get("r_trades", 0) + 1
+                        if r_contrib > 0:
+                            self.fun["r_wins"] = self.fun.get("r_wins", 0) + 1
+                            self.rs_sum = getattr(self, "rs_sum", 0.0) + r_contrib
+                        else:
+                            self.rs_loss = getattr(self, "rs_loss", 0.0) + r_contrib
+                        self.trade_rs.append(round(r_contrib, 4))
+                        self.pos_side = 0
+                        self.exit_qty_acc = 0
                 return
             if purpose is None:
                 self._inc("untracked_fills")
@@ -982,36 +1042,75 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._last_equity = eq
 
     def _reconcile_pnl(self):
-        """Hard gate: design-R ledger must reconcile with account economics.
+        """Hard gate v2: reconcile against self.trade_builder.closed_trades.
 
-        expected_usd  = Σ(R × risk_dist × point_value × qty) over recorded trades
-        observed_usd  = final equity − starting cash + fees paid
-        race noise    = PnL of excluded same-bar reversal round-trips
-        PASS requires |expected − (observed + excluded_race_pnl)| ≤ max(1% of
-        |observed|, $25). On failure the run is flagged RECONCILE_FAIL and MUST
-        NOT be used for any research conclusion.
+        TPV (total_portfolio_value) marks futures at LAST TRADE PRICE, so
+        snapshotting equity inside on_order_event carries a stale-mark error
+        at both ends (~$27/trade observed in E17). The trade_builder is the
+        authoritative realized-economics record. Three identities must hold:
+          I1  gross R vs profit_loss      : Σ(r·risk·pv·qty) ≈ Σ profit_loss
+          I2  total_fees vs modeled       : |fees − Σ modeled| small
+          I3  TPV delta vs profit_loss−fees : cash-flow identity
+        PASS requires all three residuals within tolerance. On failure the
+        run is flagged RECONCILE_FAIL and MUST NOT be quoted as a result.
         """
+        out = {"ok": False}
+        try:
+            tb_trades = list(self.trade_builder.closed_trades)
+        except Exception:
+            tb_trades = []
+        n_tb = len(tb_trades)
+
         exp_usd = 0.0
-        obs_sum = 0.0
         for t in self.trade_economics:
             exp_usd += t["r"] * t["risk_dist"] * self.point_value * t["qty"]
-            obs_sum += t["obs_usd"]
-        # primary gate: per-trade ledger R (converted at design risk) must match
-        # the equity actually realized between that trade's entry and exit.
-        resid_trades = abs(exp_usd - obs_sum)
-        tol = max(0.01 * abs(obs_sum), 25.0)
-        resid = resid_trades
-        obs_usd = obs_sum
-        ok = resid <= tol
-        # cross-check prong: every tracked fill must have become a ledger trade
+
+        i1_profit = sum(float(getattr(t, "profit_loss", 0.0) or 0.0)
+                        for t in tb_trades)
+        i1_resid = abs(exp_usd - i1_profit)
+        tol_i1 = max(0.01 * abs(i1_profit), 25.0)
+
+        fees_actual = 0.0
+        for t in tb_trades:
+            try:
+                fees_actual += float(t.total_fees)
+            except Exception:
+                pass
+        fees_modeled = 0.50 * len(self.trade_economics)   # $0.50/side x2
+        i2_resid = abs(fees_actual - fees_modeled)
+        tol_i2 = max(0.05 * max(fees_actual, 1.0), 5.0)
+
+        try:
+            tpv_delta = (float(self.portfolio.total_portfolio_value)
+                         - float(self._starting_tpv))
+        except Exception:
+            tpv_delta = None
+        if tpv_delta is None:
+            i3_resid, tol_i3, i3_target = 0.0, 0.0, 0.0
+        else:
+            i3_target = i1_profit - fees_actual
+            i3_resid = abs(tpv_delta - i3_target)
+            tol_i3 = max(0.01 * abs(tpv_delta), 25.0)
+
         fills = self.fun.get("L_fills", 0) + self.fun.get("S_fills", 0)
-        if fills != len(self.trade_economics):
-            ok = False
-        return {
-            "ok": ok, "exp_usd": round(exp_usd, 2), "obs_usd": round(obs_usd, 2),
-            "race_pnl_est": round(self.race_pnl_obs, 2), "resid": round(resid, 2),
-            "tol": round(tol, 2), "fills_vs_trades": f"{fills}/{len(self.trade_economics)}",
-        }
+        cross_ok = fills == len(self.trade_economics)
+
+        ok = (i1_resid <= tol_i1 and i2_resid <= tol_i2
+              and i3_resid <= tol_i3 and cross_ok)
+        out.update({
+            "ok": ok,
+            "n_tradebuilder": n_tb,
+            "i1_exp_usd": round(exp_usd, 2),
+            "i1_profit": round(i1_profit, 2),
+            "i1_resid": round(i1_resid, 2), "i1_tol": round(tol_i1, 2),
+            "fees_actual": round(fees_actual, 2),
+            "fees_modeled": round(fees_modeled, 2),
+            "i2_resid": round(i2_resid, 2),
+            "tpv_delta": round(tpv_delta, 2) if tpv_delta is not None else None,
+            "i3_resid": round(i3_resid, 2),
+            "fills_vs_trades": f"{fills}/{len(self.trade_economics)}",
+        })
+        return out
 
     # ------------------------------------------------------------------ end
     def on_end_of_algorithm(self):
@@ -1073,6 +1172,13 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.RuntimeStatistics["qty_max_seen"] = str(self.qty_max_seen)
             self.RuntimeStatistics["f_flatten_fills"] = str(self.fun.get("flatten_fills", 0))
             self.RuntimeStatistics["f_untracked_fills"] = str(self.fun.get("untracked_fills", 0))
+            self.RuntimeStatistics["r_unfilled_won"] = str(self.fun.get("unfilled_won", 0))
+            self.RuntimeStatistics["r_unfilled_lost"] = str(self.fun.get("unfilled_lost", 0))
+            self.RuntimeStatistics["r_unfilled_timeout"] = str(self.fun.get("unfilled_timeout", 0))
+            for rk in ("n_tradebuilder", "i1_exp_usd", "i1_profit", "i1_resid",
+                       "fees_actual", "fees_modeled", "i2_resid", "tpv_delta",
+                       "i3_resid", "fills_vs_trades"):
+                self.RuntimeStatistics[f"rec_{rk}"] = str(rec.get(rk))
         except Exception:
             pass
 

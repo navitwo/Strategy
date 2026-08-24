@@ -18,10 +18,12 @@ BASE = {"start_date": "2010-01-01", "end_date": "2024-12-31",
         "risk_usd": "10000", "max_contracts": "1"}
 
 RUNS = [
-    ("E17a-sig", {}),
-    ("E17b-null-p002", {"entry_mode": "random", "random_entry_prob": "0.02"}),
-    ("E17c-null-p006", {"entry_mode": "random", "random_entry_prob": "0.06"}),
-    ("E17d-sig-gap", {"stop_mode": "gap"}),
+    ("E18a-sig", {}),
+    ("E18b-null-p002", {"entry_mode": "random", "random_entry_prob": "0.02"}),
+    ("E18c-null-p006", {"entry_mode": "random", "random_entry_prob": "0.06"}),
+    ("E18d-sig-gap", {"stop_mode": "gap"}),
+    ("E18e-null-gap", {"stop_mode": "gap", "entry_mode": "random",
+                       "random_entry_prob": "0.06"}),
 ]
 
 for name, extra in RUNS:
@@ -38,24 +40,19 @@ for name, extra in RUNS:
         print("FAILED:", name, str(res.get("error"))[:200], flush=True)
         continue
     rt = res.get("runtimeStatistics") or {}
-    fun = {k[2:]: int(v) for k, v in rt.items() if k.startswith(("f_L", "f_S"))}
-    out = {
-        "name": name, "bid": bid,
-        "trades": int(rt.get("r_trades", 0)),
-        "wins": int(rt.get("r_wins", 0)),
-        "avg_r": float(rt.get("r_avg", 0)),
-        "pf_r": float(rt.get("r_pf", 0)),
-        "sum_r": float(rt.get("r_sum", 0)),
-        "rec_ok": rt.get("rec_ok"),
-        "rec_resid": rt.get("rec_resid"),
-        "flatten_fills": fun.get("flatten_fills", 0),
-        "untracked_fills": fun.get("untracked_fills", 0),
-        "oco_races": fun.get("oco_races", 0),
-        "eod_flattens": fun.get("eod_flattens", 0),
-        "h4_published": rt.get("d_h4_published"),
-        "sessions": rt.get("funnel_sessions"),
-        "L_fills": fun.get("L_fills", 0), "S_fills": fun.get("S_fills", 0),
-    }
+    # review round 4: capture the WHOLE statistics dict - prefix filters hid
+    # flatten_fills/untracked_fills/oco_races/eod_flattens and r_avgwin/r_avgloss.
+    out = {"name": name, "bid": bid, "rt": {k: str(v) for k, v in rt.items()}}
+    # convenience top-level for quick scanning
+    for key in ("r_trades", "r_wins", "r_avg", "r_pf", "r_sum",
+                "r_avgwin", "r_avgloss", "rec_ok"):
+        out[key] = rt.get(key)
+    out["rec_detail"] = {k: rt.get(k) for k in
+                         ("rec_n_tradebuilder", "rec_i1_exp_usd",
+                          "rec_i1_profit", "rec_i1_resid", "rec_fees_actual",
+                          "rec_fees_modeled", "rec_i2_resid", "rec_tpv_delta",
+                          "rec_i3_resid", "rec_fills_vs_trades")
+                         if k in rt}
     with open(ROOT + r"\e17_results.jsonl", "a") as f:
         f.write(json.dumps(out) + "\n")
     print(json.dumps(out), flush=True)

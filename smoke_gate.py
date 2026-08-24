@@ -17,13 +17,15 @@ from qc_api import backtest_create, poll_backtest, request
 PID = 35506697
 COMPILE = open(ROOT + r"\compile_id.txt").read().strip()
 
-params = {"start_date": "2024-06-10", "end_date": "2024-06-11",
+# Review round 4: a zero-trade day makes rec_ok==1 trivially true. Use a
+# 2-week window and REQUIRE >=3 closed trades for the gate to be meaningful.
+params = {"start_date": "2024-06-03", "end_date": "2024-06-14",
           "run_segment": "full", "instrument": "NQ",
           "risk_usd": "10000", "max_contracts": "1"}
 
-bt = backtest_create(PID, "SMOKE-gate-1day", params, compile_id=COMPILE)
+bt = backtest_create(PID, "SMOKE-gate-2wk", params, compile_id=COMPILE)
 print("smoke submitted:", bt["backtest_id"], flush=True)
-res = poll_backtest(PID, bt["backtest_id"], max_wait=1200, poll_s=10)
+res = poll_backtest(PID, bt["backtest_id"], max_wait=2400, poll_s=10)
 if res.get("status") in ("RuntimeError", "poll-timeout"):
     print("GATE FAIL: run did not complete:", res.get("status"))
     print(str(res.get("error"))[:400])
@@ -39,7 +41,7 @@ bars5 = int(rt.get("d_bars5_total", 0) or 0)
 # d_bars5_total includes the ~40-day warmup (bars flow before camp_start);
 # ~29 trading days x ~276 bars + 1 trade day ~= 8000-8600. Fragmentation (the
 # 1-bar-per-minute bug) would show ~41k; dead consolidators would show <1000.
-if not (6500 <= bars5 <= 9500):
+if not (9000 <= bars5 <= 12500):
     fails.append(f"bar_count_5m={bars5} outside warmup-aware band [6500,9500]")
 tz = rt.get("tzcheck_ok", "0")
 if tz != "1":
@@ -50,6 +52,8 @@ if h4 < 1:
 rec = rt.get("rec_ok", "0")
 fills = int(rt.get("f_L_fills", 0)) + int(rt.get("f_S_fills", 0))
 trades = int(rt.get("r_trades", 0))
+if trades < 3:
+    fails.append(f"trades={trades} < 3 - reconcile not meaningfully exercised")
 qty_ok = rt.get("qty_max_seen", "1") == "1"
 if rec != "1":
     fails.append(f"rec_ok={rec} exp={rt.get('rec_exp_usd')} "

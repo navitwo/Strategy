@@ -74,6 +74,8 @@ def make_alg():
     a.tzcheck_ok = 0
     a.qty_max_seen = 0
     a._flatten_tickets = []
+    a.unfilled_watch = []
+    a.unfilled_resolved_n = 0
     a.Debug = lambda *a2, **k2: None
     a.RuntimeStatistics = {}
     a.stop_ticket = None

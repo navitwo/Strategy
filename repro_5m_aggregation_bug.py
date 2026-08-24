@@ -92,6 +92,14 @@ def make_alg():
     a.last_mapped = None
     a.pos_qty = 0
     a._eq_at_entry = None
+    a.unfilled_watch = []
+    a.d_bars5_total = 0
+    a.tzcheck_ok = 0
+    a.qty_max_seen = 0
+    a._flatten_tickets = []
+    a.Debug = lambda *a2, **k2: None
+    a.RuntimeStatistics = {}
+    a.unfilled_resolved_n = 0
     a.camp_start = datetime(2024, 6, 4).date()
     a.w_start = 9 * 60 + 30
     a.w_end = 12 * 60
@@ -118,7 +126,10 @@ def feed(a, start_utc, n_minutes):
     The emulated TradeBarConsolidator(5m) fires its handler exactly once per
     completed :00-grid bucket — matching LEAN semantics used by self.consolidate.
     """
-    t0 = start_utc.replace(second=0, microsecond=0)
+    # v2.1 timezone contract: handler consumes NAIVE ET (algorithm tz). The
+    # harness therefore delivers 09:31.. ET wall-clock, not UTC.
+    t0 = start_utc.replace(second=0, microsecond=0, tzinfo=None)
+    a.ny = None  # unused by handler now
     period_min = 5
     state = {"key": None, "o": None, "h": None, "l": None, "c": None}
 
@@ -138,7 +149,7 @@ def feed(a, start_utc, n_minutes):
         c = o + 0.2
         bar = _Bar(o, o + 0.5, o - 0.5, c, end)
         # consolidator update (before on_data, like LEAN's pipeline)
-        et_end = bar.end_time.astimezone(a.ny)
+        et_end = bar.end_time
         st_start = et_end - timedelta(minutes=1)
         key = (st_start.year, st_start.month, st_start.day,
                st_start.hour, st_start.minute // period_min)
@@ -161,7 +172,7 @@ def feed(a, start_utc, n_minutes):
 
 
 def main():
-    start = datetime(2024, 6, 4, 14, 0, tzinfo=timezone.utc)
+    start = datetime(2024, 6, 4, 9, 30)   # naive ET per v2.1 contract
     a = make_alg()
     out = feed(a, start, 20)
 
@@ -172,7 +183,8 @@ def main():
     else:
         print("PASS 20 minute bars -> 4 x 5m bars")
     if len(out) == 4:
-        want = [(9, m) for m in (5, 10, 15, 20)]
+        # v2.1: EndTime marks completion; 09:30-ET start -> first close 09:35
+        want = [(9, mm) for mm in (35, 40, 45, 50)]
         got = [(b["et"].hour, b["et"].minute) for b in out]
         aligned = got == want
         print(("PASS" if aligned else "FAIL") + " slots align to :05..:20 ET")
