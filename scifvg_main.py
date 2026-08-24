@@ -155,7 +155,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         # ~4h from first bar start to last bar end. Fragments (< 3h30m) and
         # mid-bucket starts are discarded.
         self.h4_min_span_min = 210
-        self.h4_max_offset0 = 1
+        self.h4_max_offset0 = 5   # first slot may open up to :05 into bucket
         self.h4_gap_pending = False
         self.swing_hi = []      # [(idx, px)] confirmed pivots on h4_pub
         self.swing_lo = []

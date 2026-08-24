@@ -282,6 +282,29 @@ def test_fvg_orientation_symmetry():
     print("PASS fvg orientation symmetry")
 
 
+def test_4h_starttime_bucketing():
+    """Commit-coupled guard: with END-time keys offset0 was 295-300 and every
+    real bucket was rejected; with START-time keys offset0<=1 must hold."""
+    from datetime import datetime as dt
+    a = make_alg()
+    # one full bucket: bars ending 18:05 .. 22:00 ET-equivalent (naive here)
+    base = dt(2024, 6, 4, 20, 5)   # bucket [20,24): first bar ends 20:05
+    bid = (base.year, base.month, base.day, base.hour // 4)
+    a.h4_bucket = {"id": bid, "bars": [], "offset0": None, "t0": None, "tN": None}
+    st0 = base - timedelta(minutes=5)
+    a.h4_bucket["offset0"] = (st0.hour % 4) * 60 + st0.minute   # = 0
+    for q in range(48):
+        e = base + timedelta(minutes=5 * q)
+        a.h4_bucket["bars"].append({"open": 100, "high": 100.5, "low": 99.5,
+                                    "close": 100.2, "et": e})
+        a.h4_bucket["tN"] = e
+    a.h4_bucket["t0"] = st0
+    n0 = len(a.h4_pub)
+    a._publish_h4((2024, 6, 5, 1))
+    assert len(a.h4_pub) == n0 + 1, "full start-aligned bucket MUST publish"
+    print("PASS 4H start-time bucketing publishes full buckets")
+
+
 if __name__ == "__main__":
     test_short_sweep_reclaim_cisd()
     test_long_mirror()
@@ -291,4 +314,5 @@ if __name__ == "__main__":
     test_bias_symmetry()
     test_fvg_orientation_symmetry()
     test_partial_4h_bucket_discarded()
+    test_4h_starttime_bucketing()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")
