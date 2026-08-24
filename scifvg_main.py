@@ -281,7 +281,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         try:
             held = self.portfolio[self.fut.mapped].quantity
             if held != 0:
-                tk = self.market_order(self.fut.mapped, -held, tag="EOD-FLATTEN"); self._register_flatten_order(tk, held)
+                tk = self.market_order(self.fut.mapped, -held, tag=f"EOD-FLATTEN-{getattr(self, '_cycle_seq', 0)}"); self._register_flatten_order(tk, held)
                 self._inc("eod_flattens")
         except Exception:
             pass
@@ -929,12 +929,19 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self.order_purpose.pop(oid, None)
                 # v2.4: redundant flatten after atomic exit (LEAN lag)
                 _cid = f"{getattr(self, 'exp_hash', '')}-{getattr(self, '_cycle_seq', 0)}"
+                tag_cycle = None
+                try:
+                    tg = str(getattr(order_event.order, "tag", ""))
+                    if tg.startswith("EOD-FLATTEN-"):
+                        tag_cycle = f"{self.exp_hash}-{tg.rsplit('-', 1)[1]}"
+                except Exception:
+                    pass
+                # row ONLY if this flatten belongs to the currently-open
+                # cycle and that cycle has no ledger row yet
+                belongs = (tag_cycle == _cid)
                 already_rowed = any(t.get("cycle_id") == _cid
                                     for t in self.trade_economics)
-                stale_from_prior_cycle = (
-                    not already_rowed and self.trade_economics
-                    and self.pos_side == 0)
-                if already_rowed or stale_from_prior_cycle:
+                if not belongs or already_rowed:
                     self.pos_side = 0
                     self.pos_qty = 0
                     self.exit_qty_acc = 0

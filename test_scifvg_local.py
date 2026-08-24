@@ -430,7 +430,7 @@ def test_protocol_conformance():
     # D4: contiguous pivot confirmation
     assert "h4_gap_pending" in src
     # D5: EOD + rollover fail-closed
-    assert 'tag="EOD-FLATTEN"' in src and "ROLLOVER-FLATTEN" in src
+    assert 'tag=f"EOD-FLATTEN-' in src and "ROLLOVER-FLATTEN" in src
     # D7: attempt counters per side
     assert "_attempts" in src
     # OCO void-leg invariant
