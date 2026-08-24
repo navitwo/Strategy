@@ -486,9 +486,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     self.setup = None
                     return
                 # ABLATION-B: skip the CISD wait entirely (same reference,
-                # zero additional bars) — measures CISD's marginal value.
+                # immediate trigger on next bar) — measures CISD's marginal
+                # selectivity vs candidate which requires a real trigger.
                 if str(self.cfg.get("variant", "candidate")) == "ablate_cisd":
                     s["stage"] = "CISD"
+                    s["cisd_immediate"] = True
                 return
             if idx >= s["reclaim_deadline"]:
                 self._inc(f"{K}_no_reclaim")
@@ -496,7 +498,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             return
 
         if s["stage"] == "CISD":
-            trigger = (b["close"] > s["ref_open"]) if side > 0 else (b["close"] < s["ref_open"])
+            if s.pop("cisd_immediate", False):
+                trigger = True          # ABLATION-B: bypass trigger wait
+            else:
+                trigger = ((b["close"] > s["ref_open"]) if side > 0
+                           else (b["close"] < s["ref_open"]))
             if str(self.cfg.get("variant", "candidate")) == "ablate_fvg":
                 # ABLATION-C: no FVG requirement — enter on CISD close at
                 # market. Measures FVG-gate contribution vs candidate.
@@ -518,13 +524,15 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                             entry - float(self.cfg["target_r"]) * dist, up=False)
                         if qty >= 1:
                             s["stage"] = "FILLED"
+                            mk = self._rt(entry + side * 2 * self.tick,
+                                          up=(side > 0))
                             s["entry_px"] = entry
                             s["stop_px"] = stop
                             s["tp_px"] = tp
                             s["qty"] = qty
                             sym = self.fut.mapped
-                            tk = self.market_order(sym, qty * side,
-                                                   tag=f"E-{K}-{idx}-{self.exp_hash}")
+                            tk = self.limit_order(sym, qty * side, mk,
+                                                  tag=f"E-{K}-{idx}-{self.exp_hash}")
                             self.order_purpose[tk.order_id] = ("entry", side)
                             self._inc(f"{K}_submits")
                             return
@@ -643,18 +651,26 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self._inc(f"{K}_cancel_other")
             self.setup = None
             return
+        entry_px_mkt = b_close_ref if b_close_ref else (
+            self.bars5[-1]["close"] if self.bars5 else 0.0)
         # SHADOW-A (paired model): enter at market on inversion close instead
         # of the resting retest limit. Same signal/window/stop/target; only
         # the entry mechanism differs -> isolates adverse-selection exposure.
         if str(self.cfg.get("variant", "candidate")) == "shadow_moc":
+            # marketable limit (cross 2 ticks): immediate-entry intent with
+            # reliable execution mechanics (market orders proved unreliable
+            # in this LEAN Python environment - E18R diagnosis).
+            mk = self._rt(entry_px_mkt + side * 2 * self.tick,
+                          up=(side > 0))
             try:
-                tk = self.market_order(sym, qty * side,
-                                       tag=f"E-{K}-{idx}-{self.exp_hash}")
+                tk = self.limit_order(sym, qty * side, mk,
+                                      tag=f"E-{K}-{idx}-{self.exp_hash}")
             except Exception:
                 self._inc(f"{K}_cancel_other")
                 self.setup = None
                 return
             s["entry_id"] = tk.order_id
+            s["stage"] = "FILLED"     # prevent same-bar cancel of MOC entry
             s["entry_px"] = self._rt(b_close_ref, up=(side > 0))
             s["qty"] = qty
             s["stop_px"] = stop
@@ -679,8 +695,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     def _cancel_pending(self, counter):
         s = self.setup
+        if s and s.get("stage") == "FILLED":
+            # Market-entry variants: order already working/filled; never cancel.
+            return
         if s and s.get("entry_id") is not None:
-            # adverse-selection instrument: if this entry never filled, watch
             # its bracket forward — would it have won? (review round 3)
             if s.get("entry_px") is not None:
                 self.unfilled_watch.append({
@@ -807,6 +825,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             else:
                 K = self._sk(self.setup["side"])
                 self._cancel_pending(f"{K}_cancel_window")
+        # stage FILLED setups own live orders; they are managed by the fill
+        # handler and exit management below - never cancelled here.
 
     def _rebase(self, trim):
         if self.setup:
@@ -889,9 +909,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 return
             if purpose is None:
                 if self.pos_side != 0 or self.exit_qty_acc != 0:
-                    # fill on an order whose registration was consumed by a
-                    # racing CANCELED event while the position was still
-                    # open: real economics - capture and close the cycle.
+                    # racing CANCELED consumed registration while open:
+                    # real economics - capture and close the cycle.
                     eq = self._equity()
                     if self.risk_dist and self.entry_avg is not None:
                         side = self.pos_side

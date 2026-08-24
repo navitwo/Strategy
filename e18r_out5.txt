@@ -1,0 +1,4 @@
+submitted E18R4-shadowMOC c37df0f40407eda7ed22398355cd00f6
+{"name": "E18R4-shadowMOC", "r_trades": "62", "r_wins": "23", "r_avg": "-0.3806", "r_pf": "0.3346", "rec_ok": "1", "f_L_fills": "44", "f_S_fills": "24"}
+submitted E18R4-ablFVG 8ce2e16d46b6ffa78dbb1da5ccd650cb
+{"name": "E18R4-ablFVG", "r_trades": "132", "r_wins": "39", "r_avg": "-0.2069", "r_pf": "0.7291", "rec_ok": "1", "f_L_fills": "93", "f_S_fills": "68"}

@@ -1,0 +1,2 @@
+submitted E18R5-ablCISD 2e78fd522cd4d9ae7e5daae710211ab1
+{"name": "E18R5-ablCISD", "r_trades": "53", "r_wins": "11", "r_avg": "-0.4449", "r_pf": "0.4827", "rec_ok": "1", "f_L_fills": "33", "f_S_fills": "27"}
