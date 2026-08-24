@@ -1,0 +1,8 @@
+submitted E18R-candidate ba5944c1a2572d507633d7f8cc00bd83
+{"name": "E18R-candidate", "r_trades": "51", "r_wins": "0", "r_avg": "0.0", "r_pf": "0.0", "r_avgwin": "0", "r_avgloss": "0.0", "rec_ok": "1", "rec_i1_resid": "0.0", "rec_i2_resid": "29.5", "f_oco_void_legs": "46", "f_oco_races": "95", "f_untracked_fills": "0", "f_late_fill_events": "21"}
+submitted E18R-shadowMOC 7b46c71555840ceb99499c558de70c1a
+{"name": "E18R-shadowMOC", "r_trades": "0", "r_wins": "0", "r_avg": "0.0", "r_pf": "0.0", "r_avgwin": "0", "r_avgloss": "0", "rec_ok": "1", "rec_i1_resid": "0.0", "rec_i2_resid": "17.25", "f_oco_void_legs": "0", "f_oco_races": "0", "f_untracked_fills": "0", "f_late_fill_events": "0"}
+submitted E18R-ablCISD 6f2c715ca55c4ea3c2d61c73b8797d24
+{"name": "E18R-ablCISD", "r_trades": "51", "r_wins": "0", "r_avg": "0.0", "r_pf": "0.0", "r_avgwin": "0", "r_avgloss": "0.0", "rec_ok": "1", "rec_i1_resid": "0.0", "rec_i2_resid": "29.5", "f_oco_void_legs": "46", "f_oco_races": "95", "f_untracked_fills": "0", "f_late_fill_events": "21"}
+submitted E18R-ablFVG 818e033639dbe9cc339f20db0dd59781
+{"name": "E18R-ablFVG", "r_trades": "0", "r_wins": "0", "r_avg": "0.0", "r_pf": "0.0", "r_avgwin": "0", "r_avgloss": "0", "rec_ok": "1", "rec_i1_resid": "0.0", "rec_i2_resid": "67.0", "f_oco_void_legs": "0", "f_oco_races": "0", "f_untracked_fills": "0", "f_late_fill_events": "0"}

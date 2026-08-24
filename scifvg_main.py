@@ -989,83 +989,86 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     self.order_purpose[self.tp_ticket.order_id] = ("tp", side)
                 except Exception:
                     self._fail_closed_flatten("protect_submit_fail")
-                # stop / tp fill events
-            if self.pos_side == 0:
-                # OCO single-exit invariant (v2.3): the first leg already
-                # closed this cycle. If the account is FLAT, the second leg
-                # is economically VOID - never submit an offsetting order
-                # (the old path created double-fills and phantom cycles).
-                self._inc("oco_races")
-                held = 0
-                try:
-                    held = self.portfolio[self.fut.mapped].quantity
-                except Exception:
+                # Entry cycle fully handled; exits are separate fills.
+                return
+
+            if kind in ("stop", "tp"):
+                if self.pos_side == 0:
+                    # OCO single-exit invariant (v2.3): the first leg already
+                    # closed this cycle. If the account is FLAT, the second leg
+                    # is economically VOID - never submit an offsetting order
+                    # (the old path created double-fills and phantom cycles).
+                    self._inc("oco_races")
                     held = 0
-                if held == 0:
-                    self._inc("oco_void_legs")
-                    self.order_purpose.pop(oid, None)
+                    try:
+                        held = self.portfolio[self.fut.mapped].quantity
+                    except Exception:
+                        held = 0
+                    if held == 0:
+                        self._inc("oco_void_legs")
+                        self.order_purpose.pop(oid, None)
+                        self.stop_ticket = None
+                        self.tp_ticket = None
+                        return
+                    # Account still holds quantity: genuine race residue.
+                    # Register a flatten so its fill produces a ledger row flagged
+                    # is_race (excluded from headline stats, included in I1).
+                    try:
+                        held = self.portfolio[self.fut.mapped].quantity
+                        if held != 0:
+                            tk = self.market_order(self.fut.mapped, -held,
+                                              tag="OCO-RACE-FLATTEN")
+                            if tk is not None:
+                                self.order_purpose[tk.order_id] = (
+                                    "flatten", 1 if held < 0 else -1)
+                                self._race_leg_pending = True
+                    except Exception:
+                        pass
+                    self._cancel_ticket(self.tp_ticket if kind == "stop" else self.stop_ticket)
                     self.stop_ticket = None
                     self.tp_ticket = None
+                    if kind == "stop":
+                        self.race_stop_legs += 1   # ledger already has the -1R stop
+                    else:
+                        self.race_tp_legs += 1     # ledger already has its TP exit
+                    try:
+                        self.race_pnl_obs += self._equity() - (self._race_eq_open
+                                                               if self._race_eq_open is not None
+                                                               else self._equity())
+                    except Exception:
+                        pass
+                    self._race_eq_open = None
+                    self.order_purpose.pop(oid, None)
                     return
-                # Account still holds quantity: genuine race residue.
-                # Register a flatten so its fill produces a ledger row flagged
-                # is_race (excluded from headline stats, included in I1).
-                try:
-                    held = self.portfolio[self.fut.mapped].quantity
-                    if held != 0:
-                        tk = self.market_order(self.fut.mapped, -held,
-                                          tag="OCO-RACE-FLATTEN")
-                        if tk is not None:
-                            self.order_purpose[tk.order_id] = (
-                                "flatten", 1 if held < 0 else -1)
-                            self._race_leg_pending = True
-                except Exception:
-                    pass
-                self._cancel_ticket(self.tp_ticket if kind == "stop" else self.stop_ticket)
-                self.stop_ticket = None
-                self.tp_ticket = None
-                if kind == "stop":
-                    self.race_stop_legs += 1   # ledger already has the -1R stop
-                else:
-                    self.race_tp_legs += 1     # ledger already has its TP exit
-                try:
-                    self.race_pnl_obs += self._equity() - (self._race_eq_open
-                                                           if self._race_eq_open is not None
-                                                           else self._equity())
-                except Exception:
-                    pass
-                self._race_eq_open = None
-                self.order_purpose.pop(oid, None)
+                self.exit_qty_acc += fq
+                r_contrib = ((fp - self.entry_avg) / self.risk_dist) * side if self.risk_dist else 0.0
+                if self.exit_qty_acc >= self.pos_qty:
+                    obs_usd = self._equity() - (self._eq_at_entry if self._eq_at_entry
+                                                is not None else self._equity())
+                    self.trade_economics.append({
+                        "r": r_contrib, "risk_dist": self.risk_dist,
+                        "qty": self.pos_qty, "obs_usd": round(obs_usd, 2),
+                        "is_race": False,
+                    })
+                    self._row_written = True
+                    self._race_eq_open = self._equity()   # race leg would open here
+                    self.trade_rs.append(r_contrib)
+                    self._record_metrics_exit(kind)
+                    other = self.tp_ticket if kind == "stop" else self.stop_ticket
+                    self._cancel_ticket(other)
+                    self.stop_ticket = None
+                    self.tp_ticket = None
+                    self.pos_side = 0
+                    self.pos_qty = 0
+                    self.exit_qty_acc = 0
+                    self.entry_avg = None
+                    self.risk_dist = None
+                    # keep purpose registered until CANCELED/INVALID: LEAN may
+                    # deliver additional FILLED events (partial-fill accounting)
+                    # for the same order after the closing fill.
+                    if self.setup is not None:
+                        self.setup = None
                 return
-            self.exit_qty_acc += fq
-            r_contrib = ((fp - self.entry_avg) / self.risk_dist) * side if self.risk_dist else 0.0
-            if self.exit_qty_acc >= self.pos_qty:
-                obs_usd = self._equity() - (self._eq_at_entry if self._eq_at_entry
-                                            is not None else self._equity())
-                self.trade_economics.append({
-                    "r": r_contrib, "risk_dist": self.risk_dist,
-                    "qty": self.pos_qty, "obs_usd": round(obs_usd, 2),
-                    "is_race": False,
-                })
-                self._row_written = True
-                self._race_eq_open = self._equity()   # race leg would open here
-                self.trade_rs.append(r_contrib)
-                self._record_metrics_exit(kind)
-                other = self.tp_ticket if kind == "stop" else self.stop_ticket
-                self._cancel_ticket(other)
-                self.stop_ticket = None
-                self.tp_ticket = None
-                self.pos_side = 0
-                self.pos_qty = 0
-                self.exit_qty_acc = 0
-                self.entry_avg = None
-                self.risk_dist = None
-                # keep purpose registered until CANCELED/INVALID: LEAN may
-                # deliver additional FILLED events (partial-fill accounting)
-                # for the same order after the closing fill.
-                if self.setup is not None:
-                    self.setup = None
-            return
 
         if status in (OrderStatus.CANCELED, OrderStatus.INVALID):
             if purpose and purpose[0] == "entry":
