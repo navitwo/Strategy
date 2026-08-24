@@ -933,9 +933,24 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             fp = float(order_event.fill_price)
             self._n_fill_events = getattr(self, "_n_fill_events", 0) + 1
             if purpose and purpose[0] == "flatten":
-                # [see PROTOCOL_CONFORMANCE.md for rationale]
                 self._inc("flatten_fills")
                 self.order_purpose.pop(oid, None)
+                # v2.4 dedup: if this cycle already has an atomic/eod row,
+                # the flatten fill is redundant execution noise (the atomic
+                # exit happened moments earlier; LEAN's position view lagged).
+                _cid = f"{getattr(self, 'exp_hash', '')}-{getattr(self, '_cycle_seq', 0)}"
+                already_rowed = any(t.get("cycle_id") == _cid
+                                    for t in self.trade_economics)
+                stale_from_prior_cycle = (
+                    not already_rowed and self.trade_economics
+                    and self.pos_side == 0)
+                if already_rowed or stale_from_prior_cycle:
+                    self.pos_side = 0
+                    self.pos_qty = 0
+                    self.exit_qty_acc = 0
+                    self.risk_dist = None
+                    self.entry_avg = None
+                    return
                 if self.pos_side != 0 and self.risk_dist:
                     side = self.pos_side
                     r_contrib = ((fp - self.entry_avg) / self.risk_dist) * side

@@ -1,0 +1,5 @@
+submitted E18S-candidate 2a88fbef2eae0ba557e31865955b6e42
+{"name": "E18S-candidate", "r_trades": "54", "r_wins": "15", "r_avg": "-0.2372", "r_pf": "0.6576", "r_avgwin": "1.6402", "r_avgloss": "-0.9593", "rec_ok": "0", "rec_i1_resid": "0.0", "f_anomalous_exit_events": "0", "d_cycles_opened": "54", "d_atomic_exits": "54", "f_untracked_fills": "0", "f_late_fill_events": "55", "bars_per_session": "272.3"}
+submitted E18S-shadowMOC 7a5c77aa1adfc06bcfe93f8ed70366c5
+{"name": "E18S-shadowMOC", "r_trades": "70", "r_wins": "26", "r_avg": "-0.5624", "r_pf": "0.3051", "r_avgwin": "0.6647", "r_avgloss": "-1.2874", "rec_ok": "0", "rec_i1_resid": "0.0", "f_anomalous_exit_events": "0", "d_cycles_opened": "70", "d_atomic_exits": "70", "f_untracked_fills": "0", "f_late_fill_events": "70", "bars_per_session": "272.3"}
+submitted E18S-ablCISD c4fe71a8256a2a6e14c5a69fa7c35d1b
