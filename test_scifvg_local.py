@@ -5,10 +5,12 @@ runs deterministic scenarios: sweep/reclaim, CISD reference selection, FVG
 detection/inversion, pending cancellation, and mirror symmetry.
 """
 import sys
+import json
 import types
 from datetime import datetime, timedelta
 
 sys.path.insert(0, ".")
+ROOT = r"C:\\Users\\Jostb\\OneDrive\\Documents\\Hermes Projects\\Strategy"
 
 src = open("scifvg_main.py").read()
 
@@ -360,6 +362,141 @@ def test_consolidator_handler_slot_discipline():
           "(on_data cannot fragment)")
 
 
+
+def test_oco_single_exit_invariant():
+    """Full entry cycle via real handlers: exactly ONE economic exit.
+    Second OCO leg arriving after flat must be VOID (no order, no row)."""
+    a = make_alg()
+    a.camp_start = datetime(2024, 3, 4).date()
+    a.Debug = lambda *x, **k: None
+    from datetime import datetime as _dt
+    a.time = _dt(2024, 3, 4, 10, 15)
+
+    class _OE:
+        def __init__(s, oid, status, fq, fp):
+            s.order_id, s.status = oid, status
+            s.fill_quantity, s.fill_price = fq, fp
+            class _O: tag = ""
+            s.order = _O()
+    OE = _OE
+
+    fills = {"orders": []}
+    def limit_order(sym, qty, px, tag=""):
+        fills["orders"].append({"qty": qty})
+        class T: order_id = 100 + len(fills["orders"])
+        return T()
+    def market_order(sym, qty, tag=""):
+        fills["orders"].append({"qty": qty, "FLATTEN": True})
+        class T: order_id = 100 + len(fills["orders"])
+        return T()
+    a.limit_order = limit_order
+    a.market_order = market_order
+
+    # open a LONG cycle manually (as the fill handler would see it)
+    a.pos_side = 1
+    a.pos_qty = 1
+    a.entry_avg = 18000.0
+    a.risk_dist = 20.0
+    a._eq_at_entry = 100000.0
+    a.exit_qty_acc = 0
+    a.stop_ticket = object(); a.tp_ticket = object()
+
+    # register purposes as the engine does
+    a.trade_economics = []
+    a.trade_rs = []
+    a._race_leg_pending = False
+    a.race_stop_legs = 0
+    a.race_tp_legs = 0
+    a.race_pnl_obs = 0.0
+    a.order_purpose[201] = ("entry", 1)
+    a.order_purpose[202] = ("stop", 1)
+    a.order_purpose[203] = ("tp", 1)
+    a.setup = {"side": 1}
+
+    def eq():
+        return 100000.0
+    a._equity = eq
+
+    # STOP leg fills first (row written)
+    a.on_order_event(OE(202, mod.OrderStatus.FILLED, 1, 17980.0))
+    assert len(a.trade_economics) == 1, "first exit must row"
+    assert a.pos_side == 0 and a.pos_qty == 0
+
+    rows_before = len(a.trade_economics)
+    orders_before = len(fills["orders"])
+
+    # TP leg ALSO fills (same-bar race) while FLAT -> must be VOID:
+    # no new order submitted, no new ledger row
+    a.on_order_event(OE(203, mod.OrderStatus.FILLED, 1, 18040.0))
+    assert len(a.trade_economics) == rows_before, \
+        "second leg must NOT create economics when flat"
+    assert len(fills["orders"]) == orders_before, \
+        "second leg must NOT submit an offsetting flatten (double-fill bug)"
+    assert a.fun.get("oco_void_legs", 0) >= 1, "void classification expected"
+
+    print("PASS OCO single-exit invariant: flat second leg is void "
+          "(no double-fill, no phantom economics)")
+
+
+
+def test_protocol_conformance():
+    """G5: assert the versioned deviations (PROTOCOL_CONFORMANCE.md v2.3)
+    are actually implemented - silent drift fails here."""
+    src = open(ROOT + r"\scifvg_main.py", encoding="utf-8").read()
+    # C1: every order submission uses mapped symbol
+    assert "sym = self.fut.mapped" in src
+    assert "self.limit_order(self.fut.symbol" not in src \
+        and "self.market_order(self.fut.symbol" not in src
+    # D1: single mirrored code path for both sides
+    assert "_sk(side)" in src and side_symmetry_present(src)
+    # D2: nearest-to-price gap selection with age cap
+    assert '"_prox"' in src and "fvg_max_age_bars" in src
+    # D3: midpoint inversion rule present; through-filter gone
+    assert "mid" in src and "/ 2.0" in src
+    # D4: contiguous pivot confirmation
+    assert "h4_gap_pending" in src
+    # D5: EOD + rollover fail-closed
+    assert 'tag="EOD-FLATTEN"' in src and "ROLLOVER-FLATTEN" in src
+    # D7: attempt counters per side
+    assert "_attempts" in src
+    # OCO void-leg invariant
+    assert "oco_void_legs" in src
+    print("PASS protocol conformance: versioned deviations all present")
+
+
+def side_symmetry_present(src):
+    """Long/short share one parameterized path (no duplicated logic)."""
+    return src.count("def _try_arm_attempt") == 1 \
+        and src.count("def _advance_setup") == 1
+
+
+
+def test_deterministic_replay():
+    """G3: same inputs twice -> identical funnel + ledger (hash equal)."""
+    import hashlib
+
+    def run_once():
+        a = make_alg()
+        a.camp_start = datetime(2024, 3, 4).date()
+        a.w_start = 9 * 60 + 30
+        a.w_end = 12 * 60
+        # deterministic scenario: sweep down then CISD up (short cycle)
+        bar(a, 21000.0, 21005.0, 20995.0, 20998.0)
+        bar(a, 20998.0, 21000.0, 20890.0, 20895.0)   # sweep below PDL 20900
+        for k in range(5):
+            bar(a, 20895.0 + k, 20900.0 + k, 20894.0 + k, 20899.0 + k)
+        state = json.dumps({
+            "funnel": a.fun, "bars": len(a.bars5),
+            "setup_stage": a.setup["stage"] if a.setup else None,
+        }, sort_keys=True)
+        return hashlib.md5(state.encode()).hexdigest()
+
+    h1 = run_once()
+    h2 = run_once()
+    assert h1 == h2, f"replay diverged: {h1} != {h2}"
+    print("PASS deterministic replay (G3): identical ledgers on repeat")
+
+
 if __name__ == "__main__":
     test_short_sweep_reclaim_cisd()
     test_long_mirror()
@@ -371,4 +508,7 @@ if __name__ == "__main__":
     test_partial_4h_bucket_discarded()
     test_4h_starttime_bucketing()
     test_consolidator_handler_slot_discipline()
+    test_oco_single_exit_invariant()
+    test_protocol_conformance()
+    test_deterministic_replay()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")

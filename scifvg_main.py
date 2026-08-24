@@ -39,7 +39,7 @@ FUNNEL_KEYS = [
     "S_cisd_ok", "S_cisd_timeout", "S_inv_ok", "S_inv_timeout",
     "S_submits", "S_fills", "S_size_skips", "S_cancel_expiry",
     "S_cancel_invalid", "S_cancel_bias", "S_cancel_window", "S_cancel_other",
-    "rollovers", "oco_races", "forced_flattens", "end_flattens", "eod_flattens", "flatten_fills", "untracked_fills",
+    "rollovers", "oco_races", "forced_flattens", "end_flattens", "eod_flattens", "flatten_fills", "untracked_fills", "oco_void_legs",
 ]
 
 
@@ -56,7 +56,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                   "commission_per_side", "window_start_et", "window_end_et",
                   "invert_on_cisd_bar", "entry_location",
                   "pivot_lookback", "pivot_right", "max_attempts_per_day",
-                  "stop_mode", "entry_mode", "random_entry_prob"):
+                  "stop_mode", "entry_mode", "random_entry_prob", "variant"):
             v = self.get_parameter(p)
             if v is not None and str(v).strip() != "":
                 raw[p] = v
@@ -73,6 +73,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             "pivot_lookback": 3, "pivot_right": 3,
             "max_attempts_per_day": 1, "stop_mode": "sweep",
             "entry_mode": "signal", "random_entry_prob": 0.02,
+            "variant": "candidate",   # candidate|shadow_moc|ablate_cisd|ablate_fvg
         }
         cfg = {}
         for k, dv in defaults.items():
@@ -129,6 +130,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                          self._on_5m_consolidated)
 
         self.tick = 0.25
+        # Slippage model (v2.3): LEAN fills limit orders passively (no
+        # negative selection beyond queue reality) and market orders at next
+        # available price. Stress runs override via cfg["slippage_ticks"].
+        self.slippage_ticks = int(self.cfg.get("slippage_ticks", 1))
         self.point_value = 20.0 if self.is_nq else 2.0
 
         wh, wm = str(cfg["window_start_et"]).split(":")
@@ -274,6 +279,27 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if self.last_mapped is not None and cur_mapped is not None \
                     and str(cur_mapped) != str(self.last_mapped):
                 self._inc("rollovers")
+                # Position context is stale across the roll. Fail closed:
+                # flatten anything open, kill pending setup, reset cycle.
+                try:
+                    held = self.portfolio[cur_mapped].quantity
+                    if held != 0:
+                        tk = self.market_order(cur_mapped, -held,
+                                               tag="ROLLOVER-FLATTEN")
+                        self._register_flatten_order(tk, held)
+                        self._inc("flatten_fills")
+                except Exception:
+                    pass
+                if self.setup is not None:
+                    self.setup = None
+                    self._inc("rollover_setup_killed")
+                self.pos_side = 0
+                self.pos_qty = 0
+                self.exit_qty_acc = 0
+                self.risk_dist = None
+                self.entry_avg = None
+                self._eq_at_entry = None
+                self._row_written = False
         except Exception:
             pass
         try:
@@ -544,6 +570,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 if s["ref_open"] is None:
                     self._inc(f"{K}_cisd_timeout")
                     self.setup = None
+                    return
+                # ABLATION-B: skip the CISD wait entirely (same reference,
+                # zero additional bars) — measures CISD's marginal value.
+                if str(self.cfg.get("variant", "candidate")) == "ablate_cisd":
+                    s["stage"] = "CISD"
                 return
             if idx >= s["reclaim_deadline"]:
                 self._inc(f"{K}_no_reclaim")
@@ -552,6 +583,37 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
         if s["stage"] == "CISD":
             trigger = (b["close"] > s["ref_open"]) if side > 0 else (b["close"] < s["ref_open"])
+            if str(self.cfg.get("variant", "candidate")) == "ablate_fvg":
+                # ABLATION-C: no FVG requirement — enter on CISD close at
+                # market. Measures FVG-gate contribution vs candidate.
+                if trigger and self._in_window(et):
+                    stop_mode = str(self.cfg.get("stop_mode", "sweep"))
+                    ext = s["extreme"]
+                    buf = self.cfg["stop_buffer_ticks"] * self.tick
+                    stop = self._rt(ext - buf, up=False) if side > 0 \
+                        else self._rt(ext + buf, up=True)
+                    entry = self._rt(b["close"], up=(side > 0))
+                    dist = abs(entry - stop)
+                    if dist > 0:
+                        qty = int(float(self.cfg["risk_usd"]) /
+                                  (dist * self.point_value))
+                        qty = min(qty, int(self.cfg["max_contracts"]))
+                        tp = self._rt(
+                            entry + side * float(self.cfg["target_r"]) * dist,
+                            up=(side > 0)) if side > 0 else self._rt(
+                            entry - float(self.cfg["target_r"]) * dist, up=False)
+                        if qty >= 1:
+                            s["stage"] = "FILLED"
+                            s["entry_px"] = entry
+                            s["stop_px"] = stop
+                            s["tp_px"] = tp
+                            s["qty"] = qty
+                            sym = self.fut.mapped
+                            tk = self.market_order(sym, qty * side,
+                                                   tag=f"E-{K}-{idx}-{self.exp_hash}")
+                            self.order_purpose[tk.order_id] = ("entry", side)
+                            self._inc(f"{K}_submits")
+                            return
             if trigger:
                 imm = None       # midpoint already crossed by THIS (CISD) bar
                 elig = None      # intact zone still below: wait for inversion
@@ -623,6 +685,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     def _submit_entry(self, s, idx):
         side = s["side"]
+        b_close_ref = getattr(self, "_last_bar_close", None) or (
+            self.bars5[-1]["close"] if self.bars5 else 0.0)
         K = self._sk(side)
         g = s["fvg"]
         ext = s["extreme"]
@@ -664,6 +728,25 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if sym is None:
             self._inc(f"{K}_cancel_other")
             self.setup = None
+            return
+        # SHADOW-A (paired model): enter at market on inversion close instead
+        # of the resting retest limit. Same signal/window/stop/target; only
+        # the entry mechanism differs -> isolates adverse-selection exposure.
+        if str(self.cfg.get("variant", "candidate")) == "shadow_moc":
+            try:
+                tk = self.market_order(sym, qty * side,
+                                       tag=f"E-{K}-{idx}-{self.exp_hash}")
+            except Exception:
+                self._inc(f"{K}_cancel_other")
+                self.setup = None
+                return
+            s["entry_id"] = tk.order_id
+            s["entry_px"] = self._rt(b_close_ref, up=(side > 0))
+            s["qty"] = qty
+            s["stop_px"] = stop
+            s["tp_px"] = tp
+            self.order_purpose[tk.order_id] = ("entry", side)
+            self._inc(f"{K}_submits")
             return
         try:
             tk = self.limit_order(sym, qty * side, entry,
@@ -993,19 +1076,27 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     self.order_purpose[self.tp_ticket.order_id] = ("tp", side)
                 except Exception:
                     self._fail_closed_flatten("protect_submit_fail")
-                return
-
-            # stop / tp fill events
+                # stop / tp fill events
             if self.pos_side == 0:
-                # BUG4 fix: same-bar stop+target race. The first leg closed the
-                # position (already recorded); this second fill REVERSED us.
-                # Fail-closed flatten, and the reversal round-trip PnL is
-                # EXCLUDED from the R ledger (it is execution noise, not
-                # strategy economics) but reported via pnl_reconcile counters.
+                # OCO single-exit invariant (v2.3): the first leg already
+                # closed this cycle. If the account is FLAT, the second leg
+                # is economically VOID - never submit an offsetting order
+                # (the old path created double-fills and phantom cycles).
                 self._inc("oco_races")
-                # The residual leg IS real economics: register it so its fill
-                # produces a ledger row flagged is_race (excluded from r_*
-                # headline stats, INCLUDED in reconciliation identities).
+                held = 0
+                try:
+                    held = self.portfolio[self.fut.mapped].quantity
+                except Exception:
+                    held = 0
+                if held == 0:
+                    self._inc("oco_void_legs")
+                    self.order_purpose.pop(oid, None)
+                    self.stop_ticket = None
+                    self.tp_ticket = None
+                    return
+                # Account still holds quantity: genuine race residue.
+                # Register a flatten so its fill produces a ledger row flagged
+                # is_race (excluded from headline stats, included in I1).
                 try:
                     held = self.portfolio[self.fut.mapped].quantity
                     if held != 0:
@@ -1171,15 +1262,16 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             i1_resid = abs((i1_profit_raw - fees_actual) - tpv_delta)
             tol_i1 = max(0.01 * abs(tpv_delta), 25.0)
 
-        # Fee sanity: QC NQ all-in runs ~$4.05/side; verify per-fill-event
-        # cost is in a sane band rather than modeling exact event counts
-        # (race residue makes exact accounting unknowable from our side).
-        n_fee_events = max(len(tb_trades) * 2, 1)
-        fee_per_event = fees_actual / n_fee_events
-        i2_resid = 0.0 if 2.0 <= fee_per_event <= 8.0 else abs(
-            fee_per_event - 4.05)
-        fees_modeled = round(fee_per_event, 2)
-        tol_i2 = 0.0
+        # Fees: QC applies its NQ schedule on the MAPPED contract fills.
+        # Model: $4.05/side all-in (commission+exchange+regulatory), applied
+        # to every fill event (entries, exits, flatten legs).
+        n_fill_events = sum(int(self.fun.get(k, 0)) for k in (
+            "L_fills", "S_fills", "flatten_fills", "late_fill_events",
+            "late_closes"))
+        fee_per_side = float(self.cfg.get("fee_per_side_usd", 4.05))
+        fees_modeled = fee_per_side * max(n_fill_events, n_tb)
+        i2_resid = abs(fees_actual - fees_modeled)
+        tol_i2 = max(0.15 * max(fees_actual, 1.0), 20.0)
 
         fills = self.fun.get("L_fills", 0) + self.fun.get("S_fills", 0)
         orphans = self.fun.get("orphan_entry_fills", 0)
@@ -1274,6 +1366,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.RuntimeStatistics["f_untracked_fills"] = str(self.fun.get("untracked_fills", 0))
             self.RuntimeStatistics["f_late_fill_events"] = str(self.fun.get("late_fill_events", 0))
             self.RuntimeStatistics["f_orphan_entry_fills"] = str(self.fun.get("orphan_entry_fills", 0))
+            self.RuntimeStatistics["f_oco_void_legs"] = str(self.fun.get("oco_void_legs", 0))
             self.RuntimeStatistics["d_open_at_end"] = str(held)
             self.RuntimeStatistics["d_ledger_rows"] = str(len(self.trade_economics))
             self.RuntimeStatistics["d_race_rows"] = str(sum(
