@@ -81,6 +81,14 @@ if rec != "1":
 # implies it passed. Here only assert no SILENT leak:
 if int(rt.get("f_untracked_fills", 0) or 0) > 0:
     fails.append(f"untracked_fills={rt.get('f_untracked_fills')}")
+# v2.4 strict: zero anomalies; cycles == exits
+anom = int(rt.get("f_anomalous_exit_events", 0) or 0)
+cyc = int(rt.get("d_cycles_opened", 0) or 0)
+aex = int(rt.get("d_atomic_exits", 0) or 0)
+if anom != 0:
+    fails.append(f"anomalous_exit_events={anom} (must be 0)")
+if trades > 0 and cyc != aex:
+    fails.append(f"cycles({cyc}) != atomic_exits({aex})")
 if fills > 0 and not qty_ok:
     fails.append("fill with qty != 1")
 

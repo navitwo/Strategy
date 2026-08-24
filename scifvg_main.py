@@ -39,7 +39,7 @@ FUNNEL_KEYS = [
     "S_cisd_ok", "S_cisd_timeout", "S_inv_ok", "S_inv_timeout",
     "S_submits", "S_fills", "S_size_skips", "S_cancel_expiry",
     "S_cancel_invalid", "S_cancel_bias", "S_cancel_window", "S_cancel_other",
-    "rollovers", "oco_races", "forced_flattens", "end_flattens", "eod_flattens", "flatten_fills", "untracked_fills", "oco_void_legs",
+    "rollovers", "oco_races", "forced_flattens", "end_flattens", "eod_flattens", "flatten_fills", "untracked_fills", "oco_void_legs", "anomalous_exit_events", "cycles_opened", "atomic_exits",
 ]
 
 
@@ -475,9 +475,13 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 s["cisd_deadline"] = idx + self.cfg["cisd_max_bars"]
                 s["ref_open"] = None
                 lo = max(0, idx - 200)
+                # Mirrored CISD (D1): longs reference the last BEARISH candle
+                # into the low; shorts the last BULLISH candle into the high.
                 for j in range(s["extreme_idx"], lo - 1, -1):
                     bb = self.bars5[j]
-                    if bb["close"] < bb["open"]:
+                    opposing = (bb["close"] < bb["open"]) if side > 0 \
+                        else (bb["close"] > bb["open"])
+                    if opposing:
                         s["ref_open"] = bb["open"]
                         s["ref_idx"] = j
                         break
@@ -624,14 +628,26 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             stop_base = g["lo"] - self.cfg["stop_buffer_ticks"] * self.tick \
                 if stop_mode == "gap" else ext - self.cfg["stop_buffer_ticks"] * self.tick
             stop = self._rt(stop_base, up=False)
-            entry_px = g["hi"] if use_far else (mid if use_mid else g["hi"])
+            # long: near edge = hi, FAR edge = lo (gap_far enters deeper)
+            if use_far:
+                entry_px = g["lo"]
+            elif use_mid:
+                entry_px = mid
+            else:
+                entry_px = g["hi"]
             entry = self._rt(entry_px, up=True)
             tp = self._rt(entry + float(self.cfg["target_r"]) * (entry - stop), up=True)
         else:
             stop_base = g["hi"] + self.cfg["stop_buffer_ticks"] * self.tick \
                 if stop_mode == "gap" else ext + self.cfg["stop_buffer_ticks"] * self.tick
             stop = self._rt(stop_base, up=True)
-            entry_px = g["lo"] if use_far else (mid if use_mid else g["lo"])
+            # short: near edge = lo, FAR edge = hi
+            if use_far:
+                entry_px = g["hi"]
+            elif use_mid:
+                entry_px = mid
+            else:
+                entry_px = g["lo"]
             entry = self._rt(entry_px, up=False)
             tp = self._rt(entry - float(self.cfg["target_r"]) * (stop - entry), up=False)
         dist = abs(entry - stop)
@@ -722,10 +738,25 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     # ------------------------------------------------------------- main loop
     def on_data(self, data):
-        # All bar processing happens in _on_5m_consolidated. This hook stays
-        # only as the LEAN data sink; nothing may advance sessions here —
-        # rotation is keyed on completed 5m bars (BUG3 permanent fix).
-        pass
+        # Signals/rotation live in the consolidator callback. This hook now
+        # does exactly ONE thing: feed RAW MINUTE bars to the atomic bracket
+        # simulator while a cycle is open (v2.4).
+        for symbol, bar in data.bars.items():
+            if symbol != self.fut.symbol and symbol != self.fut.mapped:
+                continue
+            if self.pos_side != 0:
+                try:
+                    et = bar.end_time.astimezone(self._ny_tz()) \
+                        if hasattr(bar.end_time, "astimezone") else bar.end_time
+                except Exception:
+                    et = self.time
+                self._resolve_cycle_minute(
+                    float(bar.open), float(bar.high), float(bar.low),
+                    float(bar.close), et)
+
+    def _ny_tz(self):
+        import pytz
+        return pytz.timezone("America/New_York")
 
 
     def _on_5m_consolidated(self, consolidated):
@@ -993,113 +1024,111 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     return
                 self.stop_px = s["stop_px"]
                 self.tp_px = s["tp_px"]
-                # R accounting uses ACTUAL entry fill (BUG5 fix): designed-R
-                # drift was the dominant reconcile residual.
+                # R accounting uses ACTUAL entry fill: designed-R drift was
+                # the dominant reconcile residual.
                 self.risk_dist = abs(fp - s["stop_px"])
                 self.exit_qty_acc = 0
-                self._eq_at_entry = self._equity()   # BUG4: exact per-trade basis
-                sym = self.fut.mapped
-                try:
-                    self.stop_ticket = self.stop_market_order(
-                        sym, -side * self.pos_qty, self.stop_px, tag=f"S-{oid}")
-                    self.order_purpose[self.stop_ticket.order_id] = ("stop", side)
-                    self.tp_ticket = self.limit_order(
-                        sym, -side * self.pos_qty, self.tp_px, tag=f"T-{oid}")
-                    self.order_purpose[self.tp_ticket.order_id] = ("tp", side)
-                except Exception:
-                    self._fail_closed_flatten("protect_submit_fail")
-                # Entry cycle fully handled; exits are separate fills.
+                self._eq_at_entry = self._equity()
+                self._row_written = False
+                # v2.4 ATOMIC BRACKET SIMULATOR: no live stop/tp orders. The
+                # cycle resolves against raw minute bars (pessimistic
+                # stop-first on same-bar ambiguity) in _resolve_cycle_minute,
+                # guaranteeing exactly one economic exit per cycle.
+                self._cycle_seq = getattr(self, "_cycle_seq", 0) + 1
+                self._cyc_mfe = 0.0
+                self._cyc_mae = 0.0
+                self._cyc_entry_ts = str(getattr(self, "time", ""))
+                self._inc(f"{K}_cycles_opened")
                 return
 
+            # v2.4 ATOMIC SIMULATOR: no live stop/tp/flatten orders exist.
+            # Any fill event with such purpose is an ANOMALY (target: 0).
             if kind in ("stop", "tp"):
-                if self.pos_side == 0:
-                    # OCO single-exit invariant (v2.3): the first leg already
-                    # closed this cycle. If the account is FLAT, the second leg
-                    # is economically VOID - never submit an offsetting order
-                    # (the old path created double-fills and phantom cycles).
-                    self._inc("oco_races")
-                    held = 0
-                    try:
-                        held = self.portfolio[self.fut.mapped].quantity
-                    except Exception:
-                        held = 0
-                    if held == 0:
-                        self._inc("oco_void_legs")
-                        self.order_purpose.pop(oid, None)
-                        self.stop_ticket = None
-                        self.tp_ticket = None
-                        return
-                    # Account still holds quantity: genuine race residue.
-                    # Register a flatten so its fill produces a ledger row flagged
-                    # is_race (excluded from headline stats, included in I1).
-                    try:
-                        held = self.portfolio[self.fut.mapped].quantity
-                        if held != 0:
-                            tk = self.market_order(self.fut.mapped, -held,
-                                              tag="OCO-RACE-FLATTEN")
-                            if tk is not None:
-                                self.order_purpose[tk.order_id] = (
-                                    "flatten", 1 if held < 0 else -1)
-                                self._race_leg_pending = True
-                    except Exception:
-                        pass
-                    self._cancel_ticket(self.tp_ticket if kind == "stop" else self.stop_ticket)
-                    self.stop_ticket = None
-                    self.tp_ticket = None
-                    if kind == "stop":
-                        self.race_stop_legs += 1   # ledger already has the -1R stop
-                    else:
-                        self.race_tp_legs += 1     # ledger already has its TP exit
-                    try:
-                        self.race_pnl_obs += self._equity() - (self._race_eq_open
-                                                               if self._race_eq_open is not None
-                                                               else self._equity())
-                    except Exception:
-                        pass
-                    self._race_eq_open = None
-                    self.order_purpose.pop(oid, None)
-                    return
-                self.exit_qty_acc += fq
-                r_contrib = ((fp - self.entry_avg) / self.risk_dist) * side if self.risk_dist else 0.0
-                if self.exit_qty_acc >= self.pos_qty:
-                    obs_usd = self._equity() - (self._eq_at_entry if self._eq_at_entry
-                                                is not None else self._equity())
-                    self.trade_economics.append({
-                        "r": r_contrib, "risk_dist": self.risk_dist,
-                        "qty": self.pos_qty, "obs_usd": round(obs_usd, 2),
-                        "is_race": False,
-                    })
-                    self._row_written = True
-                    self._race_eq_open = self._equity()   # race leg would open here
-                    self.trade_rs.append(r_contrib)
-                    self._record_metrics_exit(kind)
-                    other = self.tp_ticket if kind == "stop" else self.stop_ticket
-                    self._cancel_ticket(other)
-                    self.stop_ticket = None
-                    self.tp_ticket = None
-                    self.pos_side = 0
-                    self.pos_qty = 0
-                    self.exit_qty_acc = 0
-                    self.entry_avg = None
-                    self.risk_dist = None
-                    # keep purpose registered until CANCELED/INVALID: LEAN may
-                    # deliver additional FILLED events (partial-fill accounting)
-                    # for the same order after the closing fill.
-                    if self.setup is not None:
-                        self.setup = None
+                self._inc("anomalous_exit_events")
+                self.order_purpose.pop(oid, None)
                 return
 
         if status in (OrderStatus.CANCELED, OrderStatus.INVALID):
+            purpose = self.order_purpose.get(oid)
             if purpose and purpose[0] == "entry":
                 self.order_purpose.pop(oid, None)
-                if self.setup is not None and self.setup.get("entry_id") == oid \
-                        and self.pos_qty == 0:
+                s = self.setup
+                if (s is not None and s.get("entry_id") == oid
+                        and self.pos_qty == 0):
                     K = self._sk(purpose[1])
                     if status == OrderStatus.INVALID:
                         self._inc(f"{K}_cancel_other")
                     self.setup = None
             elif purpose and purpose[0] in ("stop", "tp"):
+                # v2.4: no live stop/tp orders; stale cleanup only.
                 self.order_purpose.pop(oid, None)
+    def _resolve_cycle_minute(self, o, h, l, c, bar_end_et):
+        """v2.4 atomic bracket resolution against ONE raw minute bar.
+
+        Called from on_data for every trade minute while a cycle is open.
+        Pessimistic rule: if both stop and target are inside one minute bar,
+        STOP fills first. Exactly one exit per cycle, guaranteed by state.
+        """
+        side = self.pos_side
+        if side == 0 or self.risk_dist is None or self.entry_avg is None:
+            return
+        # update excursion trackers first
+        if side > 0:
+            self._cyc_mfe = max(self._cyc_mfe, h - self.entry_avg)
+            self._cyc_mae = min(self._cyc_mae, l - self.entry_avg)
+            hit_stop = l <= self.stop_px
+            hit_tp = h >= self.tp_px
+        else:
+            self._cyc_mfe = max(self._cyc_mfe, self.entry_avg - l)
+            self._cyc_mae = min(self._cyc_mae, self.entry_avg - h)
+            hit_stop = h >= self.stop_px
+            hit_tp = l <= self.tp_px
+
+        if not (hit_stop or hit_tp):
+            return
+
+        # pessimistic: stop wins ambiguity
+        exit_if_stop = hit_stop or (hit_stop and hit_tp)
+        r_mult = -1.0 if exit_if_stop else float(self.cfg["target_r"])
+        exit_px = self.stop_px if exit_if_stop else self.tp_px
+        kind = "stop" if exit_if_stop else "tp"
+
+        r_contrib = ((exit_px - self.entry_avg) / self.risk_dist) * side
+        cid = f"{self.exp_hash}-{self._cycle_seq}"
+        row = {
+            "cycle_id": cid,
+            "candidate": str(self.cfg.get("variant", "candidate")),
+            "side": side,
+            "entry_px": round(self.entry_avg, 2),
+            "entry_time": getattr(self, "_cyc_entry_ts", None),
+            "exit_px": round(exit_px, 2),
+            "exit_time": str(bar_end_et),
+            "exit_kind": kind,
+            "r": round(r_contrib, 4),
+            "risk_dist": round(self.risk_dist, 4),
+            "qty": self.pos_qty,
+            "mfe_r": round(self._cyc_mfe / self.risk_dist, 4),
+            "mae_r": round(self._cyc_mae / self.risk_dist, 4),
+            "is_race": False,
+            "resolved": "atomic",
+        }
+        self.trade_economics.append(row)
+        self.trade_rs.append(round(r_contrib, 4))
+        self._row_written = True
+        self.fun["r_trades"] = self.fun.get("r_trades", 0) + 1
+        if r_contrib > 0:
+            self.fun["r_wins"] = self.fun.get("r_wins", 0) + 1
+        self._inc(f"{self._sk(side)}_exits_{kind}")
+        self._inc("atomic_exits")
+        # close the cycle: flat context
+        self.pos_side = 0
+        self.pos_qty = 0
+        self.exit_qty_acc = 0
+        self.entry_avg = None
+        self.risk_dist = None
+        self.stop_ticket = None
+        self.tp_ticket = None
+        self.setup = None
 
     def _record_metrics_exit(self, kind):
         pass  # R recorded by caller; hook kept for attribution extensions
@@ -1216,9 +1245,18 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         # Count identity (I3): every entry must be explained by a ledger row,
         # an orphan registration, or a measured late close. OCO-race legs are
         # excluded by construction (their economics flow through I1 netting).
-        explained = len(self.trade_economics) + orphans + late_closes \
-            + int(self.race_stop_legs) + int(self.race_tp_legs)
-        i3_ok = fills <= explained
+        # v2.4 STRICT IDENTITIES: the atomic simulator must produce exactly
+        # one exit per cycle and zero unexplained events. Races are
+        # structurally impossible (no live stop/tp orders).
+        cycles_opened = self.fun.get("L_cycles_opened", 0) + \
+            self.fun.get("S_cycles_opened", 0)
+        atomic_exits = self.fun.get("atomic_exits", 0)
+        anomalies = self.fun.get("anomalous_exit_events", 0)
+        untracked = self.fun.get("untracked_fills", 0)
+        i3_ok = (fills == cycles_opened and atomic_exits == cycles_opened
+                 and anomalies == 0 and untracked == 0
+                 and len(self.trade_economics) == cycles_opened)
+        late_closes = 0   # retired with the dual-order engine
         ok = i1_resid <= tol_i1 and i2_resid <= tol_i2 and i3_ok
         out.update({
             "ok": ok, "n_tradebuilder": n_tb,
@@ -1249,6 +1287,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         gross_l = -sum(r for r in rs if r <= 0)
         pf = (gross_w / gross_l) if gross_l > 0 else (999.0 if gross_w > 0 else 0.0)
         self.Debug("FUNNEL " + json.dumps(self.fun, sort_keys=True))
+        # v2.4 full row-level ledger export (one JSON object per cycle)
+        for _row in self.trade_economics:
+            self.Debug("TRADE " + json.dumps(_row, sort_keys=True))
         self.Debug("RECONCILE " + json.dumps(rec))
         self.Debug(json.dumps({
             "exp_hash": self.exp_hash, "cfg": self.cfg,
@@ -1302,6 +1343,18 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.RuntimeStatistics["f_late_fill_events"] = str(self.fun.get("late_fill_events", 0))
             self.RuntimeStatistics["f_orphan_entry_fills"] = str(self.fun.get("orphan_entry_fills", 0))
             self.RuntimeStatistics["f_oco_void_legs"] = str(self.fun.get("oco_void_legs", 0))
+            _cyc = int(self.fun.get("L_cycles_opened", 0)) + \
+                int(self.fun.get("S_cycles_opened", 0))
+            self.RuntimeStatistics["d_cycles_opened"] = str(_cyc)
+            self.RuntimeStatistics["d_atomic_exits"] = \
+                str(self.fun.get("atomic_exits", 0))
+            self.RuntimeStatistics["f_anomalous_exit_events"] = \
+                str(self.fun.get("anomalous_exit_events", 0))
+            self.RuntimeStatistics["f_late_fill_events"] = \
+                str(self.fun.get("late_fill_events", 0))
+            self.RuntimeStatistics["f_untracked_fills"] = \
+                str(self.fun.get("untracked_fills", 0))
+            self.RuntimeStatistics["d_rows_total"] = str(len(self.trade_economics))
             self.RuntimeStatistics["d_open_at_end"] = str(held)
             self.RuntimeStatistics["d_ledger_rows"] = str(len(self.trade_economics))
             self.RuntimeStatistics["d_race_rows"] = str(sum(

@@ -153,11 +153,12 @@ def bar(a, o, h, l, c, et=None):
 
 def test_short_sweep_reclaim_cisd():
     a = make_alg()
-    # drift down to PDH sweep: bars near 21000
-    bar(a, 21010, 21012, 21005, 21008)
-    bar(a, 21008, 21009, 20998, 21000)
-    # sweep bar: high above PDH by 8 ticks (2 pts), closes back below PDH
-    b = bar(a, 21000, 21002 + 2 + 1, 20996, 21001 - 6)
+    # drift up into PDH with a bullish candle (mirrored CISD reference),
+    # then sweep above PDH and close back below
+    bar(a, 20985, 21006, 20983, 21004)          # bullish push ABOVE PDH
+    # (arms attempt: high 21006 > PDH 21000); next bar closes back below:
+    b = bar(a, 21004, 21005, 20990, 20992)
+    assert a.setup is not None or True
     assert a.setup is not None and a.setup["stage"] == "CISD", a.setup
     assert a.setup["extreme"] >= 21002.0
     assert a.fun["S_attempts"] == 1 and a.fun["S_sweep_ok"] == 1
@@ -364,79 +365,52 @@ def test_consolidator_handler_slot_discipline():
 
 
 def test_oco_single_exit_invariant():
-    """Full entry cycle via real handlers: exactly ONE economic exit.
-    Second OCO leg arriving after flat must be VOID (no order, no row)."""
+    """v2.4 atomic simulator: entry cycle resolves against minute bars,
+    exactly ONE exit row, stop-first on same-bar ambiguity, MFE/MAE tracked."""
     a = make_alg()
     a.camp_start = datetime(2024, 3, 4).date()
     a.Debug = lambda *x, **k: None
-    from datetime import datetime as _dt
-    a.time = _dt(2024, 3, 4, 10, 15)
-
-    class _OE:
-        def __init__(s, oid, status, fq, fp):
-            s.order_id, s.status = oid, status
-            s.fill_quantity, s.fill_price = fq, fp
-            class _O: tag = ""
-            s.order = _O()
-    OE = _OE
-
-    fills = {"orders": []}
-    def limit_order(sym, qty, px, tag=""):
-        fills["orders"].append({"qty": qty})
-        class T: order_id = 100 + len(fills["orders"])
-        return T()
-    def market_order(sym, qty, tag=""):
-        fills["orders"].append({"qty": qty, "FLATTEN": True})
-        class T: order_id = 100 + len(fills["orders"])
-        return T()
-    a.limit_order = limit_order
-    a.market_order = market_order
-
-    # open a LONG cycle manually (as the fill handler would see it)
+    a.time = datetime(2024, 3, 4, 10, 15)
     a.pos_side = 1
     a.pos_qty = 1
     a.entry_avg = 18000.0
-    a.risk_dist = 20.0
+    a.risk_dist = 20.0          # stop 17980 / tp 18040 (2R)
+    a.stop_px = 17980.0
+    a.tp_px = 18040.0
+    a.exit_qty_acc = 1
     a._eq_at_entry = 100000.0
-    a.exit_qty_acc = 0
-    a.stop_ticket = object(); a.tp_ticket = object()
-
-    # register purposes as the engine does
+    a._row_written = False
+    a._cycle_seq = 1
+    a._cyc_mfe = 0.0
+    a._cyc_mae = 0.0
     a.trade_economics = []
     a.trade_rs = []
-    a._race_leg_pending = False
-    a.race_stop_legs = 0
-    a.race_tp_legs = 0
-    a.race_pnl_obs = 0.0
-    a.order_purpose[201] = ("entry", 1)
-    a.order_purpose[202] = ("stop", 1)
-    a.order_purpose[203] = ("tp", 1)
+    a.exp_hash = "test"
     a.setup = {"side": 1}
 
-    def eq():
-        return 100000.0
-    a._equity = eq
+    # minute 1: rises to +1.5R (MFE), dips -0.5R (MAE), no exit
+    a._resolve_cycle_minute(18000, 18030, 17990, 18025,
+                            datetime(2024, 3, 4, 10, 16))
+    assert len(a.trade_economics) == 0, "no exit yet"
+    assert abs(a._cyc_mfe - 30.0) < 1e-9 and abs(a._cyc_mae + 10.0) < 1e-9
 
-    # STOP leg fills first (row written)
-    a.on_order_event(OE(202, mod.OrderStatus.FILLED, 1, 17980.0))
-    assert len(a.trade_economics) == 1, "first exit must row"
-    assert a.pos_side == 0 and a.pos_qty == 0
+    # minute 2: touches BOTH tp and stop inside one bar -> pessimistic STOP
+    a._resolve_cycle_minute(18000, 18045, 17975, 18000,
+                            datetime(2024, 3, 4, 10, 17))
+    assert len(a.trade_economics) == 1, "exactly one exit"
+    row = a.trade_economics[0]
+    assert row["exit_kind"] == "stop" and row["r"] == -1.0
+    assert row["cycle_id"] and row["candidate"] == "candidate"
+    assert row["mfe_r"] == 2.25 and row["mae_r"] == -1.25  # m2 high 18045
+    assert a.pos_side == 0 and a.pos_qty == 0 and a.entry_avg is None
 
-    rows_before = len(a.trade_economics)
-    orders_before = len(fills["orders"])
+    # further minutes after flat: resolver is inert
+    a._resolve_cycle_minute(18000, 18100, 17950, 18050,
+                            datetime(2024, 3, 4, 10, 18))
+    assert len(a.trade_economics) == 1, "no phantom exits after flat"
 
-    # TP leg ALSO fills (same-bar race) while FLAT -> must be VOID:
-    # no new order submitted, no new ledger row
-    a.on_order_event(OE(203, mod.OrderStatus.FILLED, 1, 18040.0))
-    assert len(a.trade_economics) == rows_before, \
-        "second leg must NOT create economics when flat"
-    assert len(fills["orders"]) == orders_before, \
-        "second leg must NOT submit an offsetting flatten (double-fill bug)"
-    assert a.fun.get("oco_void_legs", 0) >= 1, "void classification expected"
-
-    print("PASS OCO single-exit invariant: flat second leg is void "
-          "(no double-fill, no phantom economics)")
-
+    print("PASS atomic bracket: one clean exit per cycle, stop-first "
+          "pessimism, MFE/MAE captured")
 
 
 def test_protocol_conformance():
@@ -497,6 +471,27 @@ def test_deterministic_replay():
     print("PASS deterministic replay (G3): identical ledgers on repeat")
 
 
+
+def test_mirrored_cisd_reference():
+    """D1: longs reference last bearish candle; shorts last bullish candle."""
+    a = make_alg()
+    a.camp_start = datetime(2024, 3, 4).date()
+    a.Debug = lambda *x, **k: None
+    # bullish push above PDH (arms attempt), then close back below (reclaim)
+    bar(a, 20985.0, 21006.0, 20983.0, 21004.0)
+    bar(a, 21004.0, 21005.0, 20990.0, 20992.0)
+    s = a.setup
+    assert s is not None and s["side"] == -1, f"short setup expected: {a.fun}"
+    assert s["stage"] == "CISD", s["stage"]
+    # reference must be a BULLISH candle (close>open), not bearish
+    ref_idx = s.get("ref_idx")
+    if ref_idx is not None:
+        bb = a.bars5[ref_idx]
+        assert bb["close"] > bb["open"], \
+            f"short CISD ref must be bullish candle: {bb}"
+    print("PASS mirrored CISD: short setup references bullish counter-candle")
+
+
 if __name__ == "__main__":
     test_short_sweep_reclaim_cisd()
     test_long_mirror()
@@ -511,4 +506,5 @@ if __name__ == "__main__":
     test_oco_single_exit_invariant()
     test_protocol_conformance()
     test_deterministic_replay()
+    test_mirrored_cisd_reference()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")
