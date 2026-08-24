@@ -1,8 +1,4 @@
-submitted E17a-sig b45a0c7a5fb64197ce66a6d2ce45b967
 {"name": "E17a-sig", "bid": "b45a0c7a5fb64197ce66a6d2ce45b967", "trades": 46, "wins": 8, "avg_r": -0.3992, "pf_r": 0.5506, "sum_r": -18.363, "rec_ok": "0", "rec_resid": "1180.0", "flatten_fills": 0, "untracked_fills": 0, "oco_races": 0, "eod_flattens": 0, "h4_published": "22392", "sessions": "3929", "L_fills": 33, "S_fills": 18}
-submitted E17b-null-p002 9d1622c034a53654bed4b4dc0d2d3b30
 {"name": "E17b-null-p002", "bid": "9d1622c034a53654bed4b4dc0d2d3b30", "trades": 1121, "wins": 391, "avg_r": -0.2657, "pf_r": 0.6689, "sum_r": -297.894, "rec_ok": "0", "rec_resid": "14545.5", "flatten_fills": 0, "untracked_fills": 0, "oco_races": 0, "eod_flattens": 0, "h4_published": "22392", "sessions": "3929", "L_fills": 566, "S_fills": 566}
-submitted E17c-null-p006 c15d8a2ee0eebc1d94f8bd843cff777b
 {"name": "E17c-null-p006", "bid": "c15d8a2ee0eebc1d94f8bd843cff777b", "trades": 1328, "wins": 447, "avg_r": -0.325, "pf_r": 0.5987, "sum_r": -431.592, "rec_ok": "0", "rec_resid": "16291.6", "flatten_fills": 0, "untracked_fills": 0, "oco_races": 0, "eod_flattens": 0, "h4_published": "22392", "sessions": "3929", "L_fills": 683, "S_fills": 663}
-submitted E17d-sig-gap 3dd4408332f8426562fbaed7f6c8c15a
 {"name": "E17d-sig-gap", "bid": "3dd4408332f8426562fbaed7f6c8c15a", "trades": 51, "wins": 19, "avg_r": -0.0504, "pf_r": 0.9379, "sum_r": -2.57, "rec_ok": "0", "rec_resid": "1370.0", "flatten_fills": 0, "untracked_fills": 0, "oco_races": 0, "eod_flattens": 0, "h4_published": "22392", "sessions": "3929", "L_fills": 33, "S_fills": 18}
