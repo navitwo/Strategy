@@ -102,15 +102,61 @@ def make_alg():
     def noop(*args, **kwargs):
         pass
     a.market_order = noop
+    a.last_bar_et = None
+    a._consolidators = [(5, a._on_5m_consolidated)]
+
+    def register_consolidate(period, resolution, handler):
+        a._consolidators.append((period, handler))
+    a.consolidate = register_consolidate
     return a
 
 
+
 def feed(a, start_utc, n_minutes):
+    """Feed minute bars through an emulated LEAN consolidator + real on_data.
+
+    The emulated TradeBarConsolidator(5m) fires its handler exactly once per
+    completed :00-grid bucket — matching LEAN semantics used by self.consolidate.
+    """
     t0 = start_utc.replace(second=0, microsecond=0)
+    period_min = 5
+    state = {"key": None, "o": None, "h": None, "l": None, "c": None}
+
+    def emit(end_utc):
+        class _C:
+            pass
+        cb = _C()
+        cb.open, cb.high, cb.low, cb.close = (
+            state["o"], state["h"], state["l"], state["c"])
+        cb.end_time = end_utc
+        for _, handler in getattr(a, "_consolidators", []):
+            handler(cb)
+
     for k in range(n_minutes):
         end = t0 + timedelta(minutes=k + 1)
-        bar = _Bar(100.0, 100.5, 99.5, 100.2, end)
+        o = 100.0 + k * 0.01
+        c = o + 0.2
+        bar = _Bar(o, o + 0.5, o - 0.5, c, end)
+        # consolidator update (before on_data, like LEAN's pipeline)
+        et_end = bar.end_time.astimezone(a.ny)
+        st_start = et_end - timedelta(minutes=1)
+        key = (st_start.year, st_start.month, st_start.day,
+               st_start.hour, st_start.minute // period_min)
+        if state["key"] is None:
+            state.update(key=key, o=o, h=bar.high, l=bar.low, c=c)
+        elif key != state["key"]:
+            emit(bar.end_time - timedelta(minutes=1))
+            state.update(key=key, o=o, h=bar.high, l=bar.low, c=c)
+        else:
+            state["h"] = max(state["h"], bar.high)
+            state["l"] = min(state["l"], bar.low)
+            state["c"] = c
+        # real entry point
         a.on_data(_Data([(_Sym("MNQ"), bar)]))
+    # LEAN flushes consolidators at scanner end / unsubscribe; emulate that so
+    # the final partial-fed bucket is not silently lost.
+    if state["key"] is not None:
+        emit(t0 + timedelta(minutes=n_minutes))
     return list(a.bars5)
 
 

@@ -40,7 +40,7 @@ FUNNEL_KEYS = [
     "S_cisd_ok", "S_cisd_timeout", "S_inv_ok", "S_inv_timeout",
     "S_submits", "S_fills", "S_size_skips", "S_cancel_expiry",
     "S_cancel_invalid", "S_cancel_bias", "S_cancel_window", "S_cancel_other",
-    "rollovers", "oco_races", "forced_flattens", "end_flattens", "eod_flattens",
+    "rollovers", "oco_races", "forced_flattens", "end_flattens", "eod_flattens", "flatten_fills", "untracked_fills",
 ]
 
 
@@ -123,6 +123,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.fut.set_fee_model(ScifvgFeeModel(cfg["commission_per_side"]))
         self.fut.set_slippage_model(TickSlippage(cfg["slippage_ticks"]))
 
+        # 5m consolidation via LEAN (replaces hand-rolled acc5 buffer)
+        self.consolidate(timedelta(minutes=5), Resolution.MINUTE,
+                         self._on_5m_consolidated)
+
         self.ny = ZoneInfo("America/New_York")
         self.tick = 0.25
         self.point_value = 20.0 if self.is_nq else 2.0
@@ -183,6 +187,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._equity_deltas = []
         self._eq_at_entry = None
         self._race_eq_open = None
+        self._flatten_tickets = []
 
     def _equity(self):
         try:
@@ -237,7 +242,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         try:
             held = self.portfolio[self.fut.mapped].quantity
             if held != 0:
-                self.market_order(self.fut.mapped, -held, tag="EOD-FLATTEN")
+                tk = self.market_order(self.fut.mapped, -held, tag="EOD-FLATTEN"); self._register_flatten_order(tk, held)
                 self._inc("eod_flattens")
         except Exception:
             pass
@@ -336,18 +341,22 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.bias = -1
 
     def _accumulate_h4(self, b5):
-        et = b5["et"]
-        bid = (et.year, et.month, et.day, et.hour // 4)
+        # 4H buckets keyed by the bar's START time so offset0 is measured from
+        # the true bucket start (commit-coupled with the consolidate() fix:
+        # with END-time keys and exact 5m boundaries, offset0 would be 300 min
+        # and every bucket would be rejected).
+        st = b5["et"] - timedelta(minutes=5)
+        bid = (st.year, st.month, st.day, st.hour // 4)
         if self.h4_bucket is None or self.h4_bucket["id"] != bid:
             self._publish_h4(bid)
             self.h4_bucket = {
                 "id": bid, "bars": [],
-                "offset0": (et.hour % 4) * 60 + et.minute,
-                "t0": et - timedelta(minutes=1),  # first bar's start
-                "tN": et,                          # last bar's end (updated below)
+                "offset0": (st.hour % 4) * 60 + st.minute,
+                "t0": st,
+                "tN": b5["et"],
             }
         self.h4_bucket["bars"].append(b5)
-        self.h4_bucket["tN"] = et
+        self.h4_bucket["tN"] = b5["et"]
 
     # -------------------------------------------------------------- FVG store
     def _scan_fvgs(self, upto_idx, side):
@@ -418,7 +427,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if stop - entry < 4 * self.tick:
                 return
             tp = self._rt(entry - float(self.cfg["target_r"]) * (stop - entry), up=False)
-        self._submit_bracket(side, entry, stop, tp, idx)
         s = {
             "side": side, "stage": "PENDING", "arm_sk": self._session_key(et),
             "b0": idx, "reclaim_deadline": idx, "level": level,
@@ -429,7 +437,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             "retest_deadline": idx + self.cfg["retest_max_bars"],
             "entry_id": None,
         }
-        # register setup BEFORE submission so the fill handler can find it
+        # register setup BEFORE submission so the fill handler can find it;
+        # exactly ONE bracket order per null entry (dup call removed).
         self.setup = s
         self._submit_bracket(side, entry, stop, tp, idx)
         self._inc(f"{self._sk(side)}_attempts")
@@ -558,13 +567,17 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                             if imm is None or g["created"] < imm["created"]:
                                 imm = g
                             continue
-                    # nearest-to-price selection (E16e fix): pick the gap
-                    # whose proximal edge is closest to the CISD close so the
-                    # retest is actually reachable within the deadline window.
-                    prox = b["close"] - g["hi"] if side > 0 else g["lo"] - b["close"]
-                    if elig is None or prox < elig.setdefault("_prox", 1e18):
-                        elig = dict(g)
-                        elig["_prox"] = prox
+                    # nearest-to-price selection (E16e fix, sign corrected):
+                    # distance from CISD close to the zone's NEAR edge; the
+                    # smallest non-negative distance wins.
+                    if side > 0:
+                        prox = abs(b["close"] - g["hi"])
+                    else:
+                        prox = abs(b["close"] - g["lo"])
+                    if elig is None or prox < elig.get("_prox", 1e18):
+                        gg = dict(g)
+                        gg["_prox"] = prox
+                        elig = gg
                 chosen = imm if imm is not None else elig
                 if chosen is None:
                     # CISD fired but nothing invertible remains
@@ -680,34 +693,74 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     # ------------------------------------------------------------- main loop
     def on_data(self, data):
-        et = None
+        # 5m aggregation is delegated to LEAN's TradeBarConsolidator via
+        # self.consolidate(...) (registered in initialize). The consolidator
+        # owns slot boundaries on the standard :00/:05/:10 grid and calls
+        # _on_5m_consolidated exactly once per completed bucket. No manual
+        # accumulator, no trailing flush: one minute bar in never emits a bar.
         for symbol, bar in data.bars.items():
             if symbol != self.fut.symbol and symbol != self.fut.mapped:
                 continue
-            # BUG1(v2) fix: use EACH BAR'S OWN end time, never algorithm time.
-            # self.utc_time is the slice time and can run ahead of the bars in
-            # a multi-slice subscription; per-bar time keeps slots exact.
             et = self._et(bar.end_time)
+            self.last_bar_et = et
 
-            # --- 5m aggregation on the STANDARD grid: slot key from START time
-            bstart = et - timedelta(minutes=1)
-            bkey = (bstart.year, bstart.month, bstart.day, bstart.hour,
-                    bstart.minute // 5)
-            if bkey != self.acc5_key:
-                self._flush_5m()
-                self.acc5_key = bkey
-            self.acc5.append({"open": float(bar.open), "high": float(bar.high),
-                              "low": float(bar.low), "close": float(bar.close),
-                              "et": et})
-            # flush when the CURRENT bar closes its own 5m slot (:x0/:x5)
-            if et.minute % 5 == 4:
-                self._flush_5m()
+        # Session advance still happens here, AFTER any consolidation callback
+        # fired for this slice (LEAN invokes consolidators before/with on_data
+        # delivery of subsequent slices; the last bucket of a session is always
+        # flushed by the calendar before the next session's first bar arrives).
+        if self.last_bar_et is not None:
+            self._advance_session(self.last_bar_et)
 
-        # BUG3 fix: session advance AFTER flushing, so the last bars of the old
-        # session are aggregated into the OLD session before PDH/PDL rotate.
-        self._flush_5m()
-        if et is not None:
-            self._advance_session(et)
+    def _on_5m_consolidated(self, consolidated):
+        """LEAN consolidator callback: exactly one call per completed 5m slot.
+
+        `consolidated` is a TradeBar whose EndTime marks the slot boundary on
+        the standard :00/:05/:10... grid (exchange tz). We convert to ET and
+        append to bars5 with identical downstream semantics as before.
+        """
+        try:
+            end_utc = consolidated.end_time
+            et = end_utc.astimezone(self.ny)
+        except Exception:
+            return
+        agg = {
+            "open": float(consolidated.open),
+            "high": float(consolidated.high),
+            "low": float(consolidated.low),
+            "close": float(consolidated.close),
+            "idx": -1,
+            "et": et,
+        }
+        self.bars5.append(agg)
+        if len(self.bars5) > 600:
+            trim = len(self.bars5) - 600
+            del self.bars5[:trim]
+            self._rebase(trim)
+        agg["idx"] = len(self.bars5) - 1   # assign AFTER any trim
+        if self.cur_high is None or agg["high"] > self.cur_high:
+            self.cur_high = agg["high"]
+        if self.cur_low is None or agg["low"] < self.cur_low:
+            self.cur_low = agg["low"]
+        self._accumulate_h4(agg)
+        if self.setup is not None and self.setup["stage"] == "PENDING" \
+                and self.pos_qty == 0:
+            skey0 = self._session_key(et)
+            if skey0 is not None:
+                self._manage_pending(agg, agg["idx"], et, skey0)
+        skey = self._session_key(et)
+        if skey is None:
+            return
+        if str(self.cfg.get("entry_mode", "signal")) == "random":
+            self._maybe_random_entry(agg, agg["idx"], et)
+        elif (et.date() >= self.camp_start and self._in_window(et)
+                and self._new_setup_allowed() and self.bias in (1, -1)):
+            self._try_arm_attempt(agg, agg["idx"], skey)
+        if self.setup is not None and self.setup["stage"] in ("SWEPT", "CISD", "INV"):
+            if self._in_window(et) and self.setup["arm_sk"] == skey:
+                self._advance_setup(agg, agg["idx"], et, skey)
+            else:
+                K = self._sk(self.setup["side"])
+                self._cancel_pending(f"{K}_cancel_window")
 
     def _flush_5m(self):
         if not self.acc5:
@@ -804,7 +857,15 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if status == OrderStatus.FILLED:
             fq = abs(order_event.fill_quantity)
             fp = float(order_event.fill_price)
+            if purpose and purpose[0] == "flatten":
+                # Flatten fills close residual exposure; they are not design
+                # trades. Record them so fills==trades cross-check stays true
+                # (flatten orders ARE registered in order_purpose).
+                self._inc("flatten_fills")
+                self.order_purpose.pop(oid, None)
+                return
             if purpose is None:
+                self._inc("untracked_fills")
                 return
             kind = purpose[0]
             side = purpose[1]
@@ -851,8 +912,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 try:
                     held = self.portfolio[self.fut.mapped].quantity
                     if held != 0:
-                        self.market_order(self.fut.mapped, -held,
+                        tk = self.market_order(self.fut.mapped, -held,
                                           tag="OCO-RACE-FLATTEN")
+                        self._register_flatten_order(tk, held)
                 except Exception:
                     pass
                 self._cancel_ticket(self.tp_ticket if kind == "stop" else self.stop_ticket)
@@ -921,11 +983,19 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         except Exception:
             pass
 
+    def _register_flatten_order(self, ticket, held_qty):
+        """Register a flatten order so its fill is tracked (reconcile prong:
+        fills == trades requires every position-closing order to be known)."""
+        if ticket is None:
+            return
+        self.order_purpose[ticket.order_id] = ("flatten", 1 if held_qty < 0 else -1)
+        self._flatten_tickets.append(ticket.order_id)
+
     def _fail_closed_flatten(self, reason):
         try:
             held = self.portfolio[self.fut.mapped].quantity
             if held:
-                self.market_order(self.fut.mapped, -held, tag=f"FC-{reason}")
+                tk = self.market_order(self.fut.mapped, -held, tag=f"FC-{reason}"); self._register_flatten_order(tk, held)
         except Exception:
             pass
         self._cancel_ticket(self.stop_ticket)
