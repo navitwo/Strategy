@@ -420,92 +420,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return False
 
     # ---------------------------------------------------- random-entry null
-    def _maybe_random_entry(self, b, idx, et):
-        """Deterministic pseudo-random entry for the null distribution (B2-E15).
-
-        Eligible: flat, no setup, in window, prior-day levels known. The
-        accept/reject draw is a pure hash of (exp_hash, bar end time) so runs
-        are reproducible and independent of the signal path. Bracket geometry,
-        sizing, costs, and management are IDENTICAL to the signal strategy —
-        only entry selection differs.
-        """
-        import hashlib as _h
-        if not self._in_window(et) or not self._new_setup_allowed():
-            return
-        p = float(self.cfg.get("random_entry_prob", 0.02))
-        seed = f"{self.exp_hash}|{b['et'].isoformat()}"
-        h = int(_h.md5(seed.encode()).hexdigest()[:8], 16)
-        if (h % 10000) / 10000.0 >= p:
-            return
-        side = 1 if (h % 2 == 0) else -1
-        level = self.pdl if side > 0 else self.pdh
-        ext = b["low"] if side > 0 else b["high"]
-        buf = self.cfg["stop_buffer_ticks"] * self.tick
-        # entry at the just-closed bar's close: realistic (near-market) fill so
-        # designed R == realized R (the reconciliation gate verifies this).
-        if side > 0:
-            stop = self._rt(ext - buf, up=False)
-            entry = self._rt(b["close"], up=True)
-            if entry - stop < 4 * self.tick:
-                return
-            tp = self._rt(entry + float(self.cfg["target_r"]) * (entry - stop), up=True)
-        else:
-            stop = self._rt(ext + buf, up=True)
-            entry = self._rt(b["close"], up=False)
-            if stop - entry < 4 * self.tick:
-                return
-            tp = self._rt(entry - float(self.cfg["target_r"]) * (stop - entry), up=False)
-        s = {
-            "side": side, "stage": "PENDING", "arm_sk": self._session_key(et),
-            "b0": idx, "reclaim_deadline": idx, "level": level,
-            "extreme": ext, "extreme_idx": idx, "ref_open": None,
-            "ref_idx": None, "cisd_deadline": idx,
-            "fvg": {"lo": min(level, ext), "hi": max(level, ext), "created": idx},
-            "inv_deadline": idx, "cisd_idx": idx,
-            "retest_deadline": idx + self.cfg["retest_max_bars"],
-            "entry_id": None,
-        }
-        # register setup BEFORE submission so the fill handler can find it;
-        # exactly ONE bracket order per null entry (dup call removed).
-        self.setup = s
-        self._submit_bracket(side, entry, stop, tp, idx)
-        self._inc(f"{self._sk(side)}_attempts")
-
-    def _submit_bracket(self, side, entry, stop, tp, idx):
-        """Null-mode bracket: PASSIVE limit at the level edge (same entry style
-        as the signal path) + OCO exits. Entry parity matters: a marketable
-        entry would hand the null ~0.45R of bracket asymmetry and invalidate
-        the comparison (review round 3)."""
-        dist = abs(entry - stop)
-        K = self._sk(side)
-        if dist <= 0:
-            return False
-        qty = int(float(self.cfg["risk_usd"]) / (dist * self.point_value))
-        qty = min(qty, int(self.cfg["max_contracts"]))
-        if qty < 1:
-            self._inc(f"{K}_size_skips")
-            return False
-        sym = self.fut.mapped
-        if sym is None:
-            return False
-        # passive limit AT the designed entry price; no marketable offset
-        lim = self._rt(entry, up=(side > 0))
-        try:
-            tk = self.limit_order(sym, qty * side, lim,
-                                  tag=f"E-{K}-{idx}-{self.exp_hash}")
-        except Exception:
-            return False
-        if self.setup is not None:
-            self.setup["entry_id"] = tk.order_id
-            self.setup["entry_px"] = entry
-            self.setup["qty"] = qty
-            self.setup["stop_px"] = stop
-            self.setup["tp_px"] = tp
-            self.order_purpose[tk.order_id] = ("entry", side)
-        self._inc(f"{K}_submits")
-        return True
-
-    # ---------------------------------------------------------- state machine
     def _new_setup_allowed(self):
         return (self.setup is None and self.pos_qty == 0
                 and self.pdh is not None and self.pdl is not None)
@@ -882,8 +796,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
         warm = et.date() >= self.camp_start
         if str(self.cfg.get("entry_mode", "signal")) == "random":
-            if warm:
-                self._maybe_random_entry(agg, agg["idx"], et)
+            raise RuntimeError("random null retired; use paired variants")
         elif warm and skey is not None and self._in_window(et) \
                 and self._new_setup_allowed() and self.bias in (1, -1):
             self._try_arm_attempt(agg, agg["idx"], skey)
