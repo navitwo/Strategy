@@ -738,9 +738,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     # ------------------------------------------------------------- main loop
     def on_data(self, data):
-        # Signals/rotation live in the consolidator callback. This hook now
-        # does exactly ONE thing: feed RAW MINUTE bars to the atomic bracket
-        # simulator while a cycle is open (v2.4).
+        # v2.4: feed RAW minute bars to the atomic simulator while a cycle
+        # is open (signals/rotation live in the consolidator callback).
         for symbol, bar in data.bars.items():
             if symbol != self.fut.symbol and symbol != self.fut.mapped:
                 continue
@@ -900,12 +899,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if status == OrderStatus.FILLED:
             fq = abs(order_event.fill_quantity)
             fp = float(order_event.fill_price)
-            if not hasattr(self, "_filllog"):
-                self._filllog = []
-            self._filllog.append({
-                "oid": oid, "fq": fq, "fp": fp,
-                "p": str(purpose), "pos": self.pos_qty,
-                "et": str(self.time)})
+            self._n_fill_events = getattr(self, "_n_fill_events", 0) + 1
             if purpose and purpose[0] == "flatten":
                 # Flatten fills CLOSE the position: they are exits of the open
                 # design trade and MUST produce a ledger row (review round 3:
@@ -1063,12 +1057,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 # v2.4: no live stop/tp orders; stale cleanup only.
                 self.order_purpose.pop(oid, None)
     def _resolve_cycle_minute(self, o, h, l, c, bar_end_et):
-        """v2.4 atomic bracket resolution against ONE raw minute bar.
-
-        Called from on_data for every trade minute while a cycle is open.
-        Pessimistic rule: if both stop and target are inside one minute bar,
-        STOP fills first. Exactly one exit per cycle, guaranteed by state.
-        """
+        """v2.4: resolve the open cycle against one raw minute bar.
+        Pessimistic: stop wins same-bar stop/target ambiguity."""
         side = self.pos_side
         if side == 0 or self.risk_dist is None or self.entry_avg is None:
             return
@@ -1287,8 +1277,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         gross_l = -sum(r for r in rs if r <= 0)
         pf = (gross_w / gross_l) if gross_l > 0 else (999.0 if gross_w > 0 else 0.0)
         self.Debug("FUNNEL " + json.dumps(self.fun, sort_keys=True))
-        # v2.4 full row-level ledger export (one JSON object per cycle)
-        for _row in self.trade_economics:
+        for _row in self.trade_economics:   # v2.4 row-level ledger
             self.Debug("TRADE " + json.dumps(_row, sort_keys=True))
         self.Debug("RECONCILE " + json.dumps(rec))
         self.Debug(json.dumps({
@@ -1361,28 +1350,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 1 for t in self.trade_economics if t.get("is_race")))
             self.RuntimeStatistics["d_pos_side_end"] = str(self.pos_side)
             self.RuntimeStatistics["d_exit_acc_end"] = str(self.exit_qty_acc)
-            fl = getattr(self, "_filllog", [])
-            self.RuntimeStatistics["d_n_fillevents"] = str(len(fl))
-            # per-cycle audit: how many entries got exit rows?
-            n_entries = int(self.fun.get("L_fills", 0)) + \
-                int(self.fun.get("S_fills", 0))
-            rows = len(self.trade_economics)
-            race_rows = sum(1 for t in self.trade_economics
-                            if t.get("is_race"))
-            self.RuntimeStatistics["d_entries"] = str(n_entries)
-            self.RuntimeStatistics["d_rows_total"] = str(rows)
-            self.RuntimeStatistics["d_rows_race"] = str(race_rows)
-            self.RuntimeStatistics["d_rows_normal"] = str(rows - race_rows)
-            self.RuntimeStatistics["d_race_stop_legs"] = str(self.race_stop_legs)
-            self.RuntimeStatistics["d_race_tp_legs"] = str(self.race_tp_legs)
-            # compact sequence audit: oid:last4 : purpose-short : pos_after
-            seq = "|".join(
-                f"{f['oid'] % 10000:04d}:{f['p'][:12]}:{f['pos']}"
-                for f in fl[-60:])
-            self.RuntimeStatistics["d_fill_seq"] = seq[:900]
-            self.RuntimeStatistics["r_unfilled_won"] = str(self.fun.get("unfilled_won", 0))
-            self.RuntimeStatistics["r_unfilled_lost"] = str(self.fun.get("unfilled_lost", 0))
-            self.RuntimeStatistics["r_unfilled_timeout"] = str(self.fun.get("unfilled_timeout", 0))
+            self.RuntimeStatistics["d_n_fillevents"] = str(getattr(self, "_n_fill_events", 0))
             for rk in ("n_tradebuilder", "i1_profit_raw", "i1_resid",
                        "i1_tol", "fees_actual", "fees_modeled", "i2_resid",
                        "tpv_delta", "fills_vs_ledger_orphans", "late_events"):
