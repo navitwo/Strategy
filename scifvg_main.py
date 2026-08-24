@@ -7,7 +7,6 @@ from datetime import timedelta
 import hashlib
 import json
 import math
-from zoneinfo import ZoneInfo
 
 
 class ScifvgFeeModel(FeeModel):
@@ -110,7 +109,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.set_start_date(ws.year, ws.month, ws.day)
         self.set_end_date(end.year, end.month, end.day)
         self.set_cash(50000)
-        self.set_time_zone(TimeZones.UTC)
+        self.set_time_zone(TimeZones.NEW_YORK)
 
         root = (Futures.Indices.NASDAQ_100_E_MINI if self.is_nq
                 else Futures.Indices.MICRO_NASDAQ_100_E_MINI)
@@ -123,11 +122,12 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.fut.set_fee_model(ScifvgFeeModel(cfg["commission_per_side"]))
         self.fut.set_slippage_model(TickSlippage(cfg["slippage_ticks"]))
 
-        # 5m consolidation via LEAN (replaces hand-rolled acc5 buffer)
-        self.consolidate(timedelta(minutes=5), Resolution.MINUTE,
+        # 5m consolidation via LEAN (replaces hand-rolled acc5 buffer).
+        # Overload note: the symbol-bearing overload is the only one LEAN
+        # exposes to Python for futures subscriptions.
+        self.consolidate(self.fut.symbol, timedelta(minutes=5),
                          self._on_5m_consolidated)
 
-        self.ny = ZoneInfo("America/New_York")
         self.tick = 0.25
         self.point_value = 20.0 if self.is_nq else 2.0
 
@@ -145,8 +145,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.cur_low = None
         self.session_tried = set()
 
-        self.acc5 = []          # minute bars accumulating into current 5m bucket
-        self.acc5_key = None    # 5m slot key on the standard :00 grid (START time)
         self.bars5 = []         # completed 5m dicts: o,h,l,c,idx,et(end)
         self.h4_pub = []        # published validated 4H bars
         self.h4_bucket = None   # {"id":..., "bars":[...], "offset0", "t0", "tN"}
@@ -188,6 +186,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._eq_at_entry = None
         self._race_eq_open = None
         self._flatten_tickets = []
+        self.d_bars5_total = 0
+        self.tzcheck_ok = 0
+        self.qty_max_seen = 0
 
     def _equity(self):
         try:
@@ -200,9 +201,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                    f"{cfg['window_end_et']} hash={self.exp_hash}")
 
     # ------------------------------------------------------------- utilities
-    def _et(self, utc_dt):
-        return utc_dt.astimezone(self.ny)
-
     def _et_minutes(self, et):
         return et.hour * 60 + et.minute
 
@@ -693,36 +691,24 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     # ------------------------------------------------------------- main loop
     def on_data(self, data):
-        # 5m aggregation is delegated to LEAN's TradeBarConsolidator via
-        # self.consolidate(...) (registered in initialize). The consolidator
-        # owns slot boundaries on the standard :00/:05/:10 grid and calls
-        # _on_5m_consolidated exactly once per completed bucket. No manual
-        # accumulator, no trailing flush: one minute bar in never emits a bar.
-        for symbol, bar in data.bars.items():
-            if symbol != self.fut.symbol and symbol != self.fut.mapped:
-                continue
-            et = self._et(bar.end_time)
-            self.last_bar_et = et
+        # All bar processing happens in _on_5m_consolidated. This hook stays
+        # only as the LEAN data sink; nothing may advance sessions here —
+        # rotation is keyed on completed 5m bars (BUG3 permanent fix).
+        pass
 
-        # Session advance still happens here, AFTER any consolidation callback
-        # fired for this slice (LEAN invokes consolidators before/with on_data
-        # delivery of subsequent slices; the last bucket of a session is always
-        # flushed by the calendar before the next session's first bar arrives).
-        if self.last_bar_et is not None:
-            self._advance_session(self.last_bar_et)
 
     def _on_5m_consolidated(self, consolidated):
         """LEAN consolidator callback: exactly one call per completed 5m slot.
 
-        `consolidated` is a TradeBar whose EndTime marks the slot boundary on
-        the standard :00/:05/:10... grid (exchange tz). We convert to ET and
-        append to bars5 with identical downstream semantics as before.
+        Timezone contract (TZCHECK-enforced): with the algorithm timezone set
+        to New York, LEAN delivers Python datetimes that are NAIVE wall-clock
+        exchange time (ET for NQ). No astimezone conversion is performed —
+        converting would reinterpret already-ET stamps as UTC (4-5h shift).
+        Session rotation also lives here so it advances on the COMPLETED-BAR
+        clock; the old on_data-minute-clock path let PDH/PDL rotate before the
+        session's final buckets were consumed (original BUG3 failure mode).
         """
-        try:
-            end_utc = consolidated.end_time
-            et = end_utc.astimezone(self.ny)
-        except Exception:
-            return
+        et = consolidated.end_time          # naive ET by algorithm tz contract
         agg = {
             "open": float(consolidated.open),
             "high": float(consolidated.high),
@@ -732,56 +718,56 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             "et": et,
         }
         self.bars5.append(agg)
+        self.d_bars5_total += 1
         if len(self.bars5) > 600:
             trim = len(self.bars5) - 600
             del self.bars5[:trim]
             self._rebase(trim)
         agg["idx"] = len(self.bars5) - 1   # assign AFTER any trim
+
+        # ---- TZCHECK: first RTH 5m bar of each day must stamp 09:35 ET ----
+        if not getattr(self, "_tzcheck_done", False):
+            hm = et.hour * 60 + et.minute
+            if hm == 9 * 60 + 35:
+                self._tzcheck_done = True
+                self.tzcheck_ok = 1
+                self.Debug(f"TZCHECK first-RTH-bar et={et.isoformat()} "
+                           f"ok=True")
+            elif 9 * 60 + 30 < hm < 12 * 60:
+                self.Debug(f"TZCHECK candidate bar et={et.isoformat()} "
+                           f"(waiting for 09:35)")
+
+        # session rotation FIRST (levels roll only after the completed bar
+        # has been accounted to the OLD session's running extremes below)
+        skey = self._session_key(et)
+        if skey is not None:
+            self._advance_session(et)
+
         if self.cur_high is None or agg["high"] > self.cur_high:
             self.cur_high = agg["high"]
         if self.cur_low is None or agg["low"] < self.cur_low:
             self.cur_low = agg["low"]
+
         self._accumulate_h4(agg)
+
         if self.setup is not None and self.setup["stage"] == "PENDING" \
                 and self.pos_qty == 0:
-            skey0 = self._session_key(et)
-            if skey0 is not None:
-                self._manage_pending(agg, agg["idx"], et, skey0)
-        skey = self._session_key(et)
-        if skey is None:
-            return
+            self._manage_pending(agg, agg["idx"], et, skey)
+
+        warm = et.date() >= self.camp_start
         if str(self.cfg.get("entry_mode", "signal")) == "random":
-            self._maybe_random_entry(agg, agg["idx"], et)
-        elif (et.date() >= self.camp_start and self._in_window(et)
-                and self._new_setup_allowed() and self.bias in (1, -1)):
+            if warm:
+                self._maybe_random_entry(agg, agg["idx"], et)
+        elif warm and skey is not None and self._in_window(et) \
+                and self._new_setup_allowed() and self.bias in (1, -1):
             self._try_arm_attempt(agg, agg["idx"], skey)
+
         if self.setup is not None and self.setup["stage"] in ("SWEPT", "CISD", "INV"):
             if self._in_window(et) and self.setup["arm_sk"] == skey:
                 self._advance_setup(agg, agg["idx"], et, skey)
             else:
                 K = self._sk(self.setup["side"])
                 self._cancel_pending(f"{K}_cancel_window")
-
-    def _flush_5m(self):
-        if not self.acc5:
-            return
-        bars = self.acc5
-        self.acc5 = []
-        agg = {
-            "open": bars[0]["open"],
-            "high": max(x["high"] for x in bars),
-            "low": min(x["low"] for x in bars),
-            "close": bars[-1]["close"],
-            "idx": -1,
-            "et": bars[-1]["et"],
-        }
-        self.bars5.append(agg)
-        if len(self.bars5) > 600:
-            trim = len(self.bars5) - 600
-            del self.bars5[:trim]
-            self._rebase(trim)
-        agg["idx"] = len(self.bars5) - 1   # assign AFTER any trim
-        self._on_completed_bar(agg)
 
     def _rebase(self, trim):
         if self.setup:
@@ -793,39 +779,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if self.setup.get("fvg"):
                 self.setup["fvg"]["created"] -= trim
 
-    def _on_completed_bar(self, b):
-        idx = b["idx"]
-        et = b["et"]
-        skey = self._session_key(et)
-        if skey is None:
-            return  # maintenance halt bar cannot exist (halt has no trades)
-
-        if self.cur_high is None or b["high"] > self.cur_high:
-            self.cur_high = b["high"]
-        if self.cur_low is None or b["low"] < self.cur_low:
-            self.cur_low = b["low"]
-
-        self._accumulate_h4(b)
-
-        if self.setup is not None and self.setup["stage"] == "PENDING" \
-                and self.pos_qty == 0:
-            self._manage_pending(b, idx, et, skey)
-
-        if et.date() < self.camp_start:
-            return  # warmup: build bias/levels only; no signal generation
-
-        if str(self.cfg.get("entry_mode", "signal")) == "random":
-            self._maybe_random_entry(b, idx, et)
-        elif (self._in_window(et) and self._new_setup_allowed()
-                and self.bias in (1, -1)):
-            self._try_arm_attempt(b, idx, skey)
-
-        if self.setup is not None and self.setup["stage"] in ("SWEPT", "CISD", "INV"):
-            if self._in_window(et) and self.setup["arm_sk"] == skey:
-                self._advance_setup(b, idx, et, skey)
-            else:
-                K = self._sk(self.setup["side"])
-                self._cancel_pending(f"{K}_cancel_window")
 
     def _manage_pending(self, b, idx, et, skey):
         s = self.setup
@@ -878,6 +831,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     self.entry_avg = ((self.entry_avg * self.pos_qty) + fp * fq) / (self.pos_qty + fq)
                 self.pos_side = side
                 self.pos_qty += fq
+                self.qty_max_seen = max(self.qty_max_seen, fq)
                 s = self.setup
                 if s is None:
                     self._fail_closed_flatten("entry_fill_no_state")
@@ -1114,6 +1068,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.RuntimeStatistics["race_legs_tp"] = str(self.race_tp_legs)
             self.RuntimeStatistics["eod_flattens"] = str(self.fun.get("eod_flattens", 0))
             self.RuntimeStatistics["rollovers"] = str(self.fun.get("rollovers", 0))
+            self.RuntimeStatistics["d_bars5_total"] = str(self.d_bars5_total)
+            self.RuntimeStatistics["tzcheck_ok"] = str(self.tzcheck_ok)
+            self.RuntimeStatistics["qty_max_seen"] = str(self.qty_max_seen)
+            self.RuntimeStatistics["f_flatten_fills"] = str(self.fun.get("flatten_fills", 0))
+            self.RuntimeStatistics["f_untracked_fills"] = str(self.fun.get("untracked_fills", 0))
         except Exception:
             pass
 

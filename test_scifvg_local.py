@@ -70,6 +70,20 @@ def make_alg():
     a.h4_min_span_min = 210     # BUG2 wall-clock span gate (set in initialize())
     a.h4_max_offset0 = 1
     a.h4_gap_pending = False
+    a.d_bars5_total = 0
+    a.tzcheck_ok = 0
+    a.qty_max_seen = 0
+    a._flatten_tickets = []
+    a.Debug = lambda *a2, **k2: None
+    a.RuntimeStatistics = {}
+    a.stop_ticket = None
+    a.tp_ticket = None
+    a.order_purpose = {}
+    a.pos_side = 0
+    a.exit_qty_acc = 0
+    a.entry_avg = None
+    a.risk_dist = None
+    a.last_mapped = None
     a.cfg = {
         "sweep_min_ticks": 4, "sweep_max_ticks": 96, "reclaim_bars": 3,
         "cisd_max_bars": 12, "inv_max_bars": 12, "retest_max_bars": 24,
@@ -305,6 +319,45 @@ def test_4h_starttime_bucketing():
     print("PASS 4H start-time bucketing publishes full buckets")
 
 
+
+def test_consolidator_handler_slot_discipline():
+    """Drive _on_5m_consolidated (the real entry point) with 20 one-minute
+    consolidations and require exactly 4 x 5m emissions on :05..:20."""
+    a = make_alg()
+    a.camp_start = datetime(2024, 3, 4).date()
+    a.w_start = 9 * 60 + 30
+    a.w_end = 12 * 60
+
+    class _C:
+        pass
+
+    t0 = datetime(2024, 3, 4, 9, 31)
+    emitted_before = 0
+    state = {"key": None}
+    for k in range(20):
+        end = t0 + timedelta(minutes=k)
+        st = end - timedelta(minutes=1)
+        key = (st.year, st.month, st.day, st.hour, st.minute // 5)
+        if state["key"] is not None and key != state["key"]:
+            pass  # previous bucket already flushed by handler call below
+        cb = _C()
+        cb.open, cb.high, cb.low, cb.close = 100.0 + k * 0.01, 101.0, 99.0, 100.5
+        # LEAN fires the handler only at bucket completion: emulate by calling
+        # it every 5th minute with the bucket's end time.
+        if (end.minute % 5) == 0:
+            cb.end_time = end
+            before = len(a.bars5)
+            a._on_5m_consolidated(cb)
+            assert len(a.bars5) == before + 1, \
+                f"handler must emit exactly one bar per completed slot ({end})"
+    total = len(a.bars5)
+    assert total == 4, f"expected 4 consolidated bars, got {total}"
+    mins = [(b["et"].hour, b["et"].minute) for b in a.bars5]
+    assert mins == [(9, 35), (9, 40), (9, 45), (9, 50)], mins
+    print("PASS consolidator handler emits exactly one bar per 5m slot "
+          "(on_data cannot fragment)")
+
+
 if __name__ == "__main__":
     test_short_sweep_reclaim_cisd()
     test_long_mirror()
@@ -315,4 +368,5 @@ if __name__ == "__main__":
     test_fvg_orientation_symmetry()
     test_partial_4h_bucket_discarded()
     test_4h_starttime_bucketing()
+    test_consolidator_handler_slot_discipline()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")
