@@ -85,3 +85,15 @@ and R-ledger discipline. Limit: 4 completed experiments → then STOP.
    under gap-stop geometry.
 3. Slippage stress 2–3 ticks each way on any configuration that survives step 1–2.
 4. Only after a frozen candidate exists: validation segment 2025-05→2026-01, holdout untouched.
+
+
+## 2026-08-23 — Review round 5 directive (user)
+- E18 reclassified: execution-engine diagnostic ONLY. Not evidence of gate
+  contribution, adverse selection, or entry viability.
+- Optimization PAUSED until new correctness gates pass: OCO single-exit
+  cycle invariant, exact ledger↔portfolio reconciliation, fees/slippage on
+  mapped contracts, partial fills, rollovers, protocol-conformance
+  versioning, paired shadow entry models + candidate-matched ablations,
+  deterministic replay, execution invariants.
+- Validation + holdout LOCKED. Next dev rerun designated E18R; artifacts
+  packaged for independent audit before validation unlocks.

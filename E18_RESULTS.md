@@ -1,3 +1,11 @@
+> **STATUS: EXECUTION-ENGINE DIAGNOSTIC ONLY — NOT EDGE EVIDENCE.**
+> Reclassified by directive 2026-08-23 (review round 5). The numbers below
+> validate engine mechanics (reconciliation identities, fill accounting),
+> NOT gate contribution, adverse selection as an edge finding, or entry
+> viability. Superseded by E18R after the v2.3 correctness gates.
+> Validation and holdout periods remain LOCKED; optimization PAUSED until
+> the new correctness gate suite passes.
+
 # E18 — GATE-CONTRIBUTION & ADVERSE-SELECTION STUDY (engine v2.2, rec_ok=1)
 
 Precondition: SMOKE GATE PASS on FY-23 (bid c2cf1e05…): 6 trades, TZCHECK
