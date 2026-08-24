@@ -382,9 +382,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                        all(x["low"] > b["low"] for x in right):
                         self.swing_lo.append((ci, b["low"]))
 
-        # break of structure on this completed close (swings confirmed earlier).
-        # Symmetric: bull evaluated first when leaving non-bull state, bear first
-        # when leaving non-bear state; a single close cannot flip twice.
+        # [see PROTOCOL_CONFORMANCE.md]
         bull_break = bool(self.swing_hi) and self.swing_hi[-1][0] < idx \
             and c > self.swing_hi[-1][1]
         bear_break = bool(self.swing_lo) and self.swing_lo[-1][0] < idx \
@@ -692,9 +690,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             return
         entry_px_mkt = b_close_ref if b_close_ref else (
             self.bars5[-1]["close"] if self.bars5 else 0.0)
-        # SHADOW-A (paired model): enter at market on inversion close instead
-        # of the resting retest limit. Same signal/window/stop/target; only
-        # the entry mechanism differs -> isolates adverse-selection exposure.
+        # [see PROTOCOL_CONFORMANCE.md]
         if str(self.cfg.get("variant", "candidate")) == "shadow_moc":
             # marketable limit (cross 2 ticks): immediate-entry intent with
             # reliable execution mechanics (market orders proved unreliable
