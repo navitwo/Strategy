@@ -33,8 +33,14 @@ rt = res.get("runtimeStatistics") or {}
 fails = []
 
 bars5 = int(rt.get("d_bars5_total", 0) or 0)
-if not (250 <= bars5 <= 300):
-    fails.append(f"bar_count_5m={bars5} outside [250,300]")
+# NQ trades ~23h/day on 5m buckets => ~276 bars/session; a 2-day window with
+# partial boundary days lands in [300, 700]. Fragmentation bugs (1 bar/min)
+# would produce ~2800+ and fail the upper bound; dead consolidators give <100.
+# d_bars5_total includes the ~40-day warmup (bars flow before camp_start);
+# ~29 trading days x ~276 bars + 1 trade day ~= 8000-8600. Fragmentation (the
+# 1-bar-per-minute bug) would show ~41k; dead consolidators would show <1000.
+if not (6500 <= bars5 <= 9500):
+    fails.append(f"bar_count_5m={bars5} outside warmup-aware band [6500,9500]")
 tz = rt.get("tzcheck_ok", "0")
 if tz != "1":
     fails.append(f"TZCHECK not satisfied (tzcheck_ok={tz})")
