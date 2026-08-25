@@ -1,0 +1,9 @@
+E19B-smoke-A: submitted 5e728f58fa252270fa197dd2901cd560
+E19B-smoke-A: status=Completed.
+E19B-smoke-B: submitted b2657688626fe9c51c53f5b008f6a27c
+E19B-smoke-B: status=Completed.
+A: attempts=194 candidates~=252 os_events=252
+B: attempts=194 candidates~=252 os_events=252
+REPLAY EQUALITY: identical telemetry (163 keys)
+--------------------------------------------------
+SMOKE RESULT: PASS (artifact completeness + replay equality)
