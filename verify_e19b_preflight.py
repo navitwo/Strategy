@@ -59,7 +59,7 @@ check("A2 single shared event_id per reclaim (one inc + one use)",
       and '"arm":' not in blk)
 
 # (3) instrument spec table with real roots/tick/pv
-for tok in ('"ES":', '"YM":', '"RTY":', "SP500_E_MINI", "DOW_30_E_MINI",
+for tok in ('"ES":', '"YM":', '"RTY":', "SP_500_E_MINI", "DOW_30_E_MINI",
             "RUSSELL_2000_E_MINI"):
     check(f"A3 spec table has {tok}", tok in code_only or tok in src)
 check("A3b old binary root map gone",

@@ -19,6 +19,11 @@ stub_src = '''
 class _StubBase:
     def __init__(self, *a, **k):
         pass
+    def add_chart(self, chart):
+        self.charts[chart.name] = chart
+
+    def add_series(self, chart_name, series):
+        self.charts[chart_name].series[series.name] = series
 
 
 class QCAlgorithm(_StubBase):
@@ -48,9 +53,32 @@ class _EnumNS:
 
 
 OrderStatus = _EnumNS
+class _Pt:
+    def __init__(self, x, y, label=""):
+        self.x, self.y, self.label = x, y, label
+
+
+class ScatterSeries:
+    def __init__(self, name):
+        self.name = name
+        self.values = []
+
+    def add_point(self, x, y, label=""):
+        self.values.append(_Pt(x, y, label))
+
+
+class Chart:
+    def __init__(self, name):
+        self.name = name
+        self.series = {}
+
+
+
+
+
 Futures = types.SimpleNamespace(Indices=types.SimpleNamespace(
     NASDAQ_100_E_MINI="NQ", MICRO_NASDAQ_100_E_MINI="MNQ",
-    SP500_E_MINI="ES", DOW_30_E_MINI="YM", RUSSELL_2000_E_MINI="RTY"))
+    SP_500_E_MINI="ES", DOW_30_E_MINI="YM", RUSSELL_2000_E_MINI="RTY"))
 Resolution = types.SimpleNamespace(MINUTE="minute")
 DataMappingMode = types.SimpleNamespace(OPEN_INTEREST=0)
 DataNormalizationMode = types.SimpleNamespace(RAW=0)
@@ -86,6 +114,7 @@ def make_alg():
     a._pending_events = []
     a._ev_candidates = []    # v2.6 E19B candidates (post-reclaim)
     a._ev_results = []
+    a.charts = {}
     a.trade_economics = []
     a._starting_tpv = 100000.0
     a.trade_rs = []
