@@ -1320,8 +1320,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             sname = "aligned" if e.get("bias_aligned") else "opposed"
             if cname not in self._ev_charts:
                 self.add_chart(Chart(cname))
-                self.add_series(cname, ScatterSeries("aligned"))
-                self.add_series(cname, ScatterSeries("opposed"))
+                self.add_series(cname, Series("aligned", SeriesType.SCATTER))
+                self.add_series(cname, Series("opposed", SeriesType.SCATTER))
                 self._ev_charts.add(cname)
             try:
                 sr = self.charts[cname].series[sname]

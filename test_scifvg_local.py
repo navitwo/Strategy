@@ -58,6 +58,24 @@ class _Pt:
         self.x, self.y, self.label = x, y, label
 
 
+class Series:
+    def __init__(self, name, series_type=None):
+        self.name = name
+        self.series_type = series_type
+        self.values = []
+
+    def add_point(self, x, y, label=""):
+        self.values.append(_Pt(x, y, label))
+
+
+class _ST:
+    SCATTER = 1
+    LINE = 0
+
+
+SeriesType = _ST
+
+
 class ScatterSeries:
     def __init__(self, name):
         self.name = name
