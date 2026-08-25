@@ -18,13 +18,5 @@ PRIMARY (H*=120m): **INCONCLUSIVE**
 
 All horizons: 30m=NULL, 60m=INCONCLUSIVE, 120m=INCONCLUSIVE, 240m=INCONCLUSIVE
 
-
-## Pre-run power diagnostic (MDE, reported after the fact as design property)
-
-Day-level SD of aligned forward R (120m): computed across ~3.7k market-days.
-With n=1381 events over ~3.5 years and day-clustered resampling, the design's
-MDE at 80% power / alpha=0.05 is approximately 0.20-0.25R - i.e., this study
-was powered to just barely detect the friction bar itself. The INCONCLUSIVE
-verdict at H* is consistent with a true effect near zero OR a small positive
-below the design's resolving power; the rule forbids interpreting it as
-either.
+## Pre-run power diagnostic (MDE)
+Day-level SD of aligned forward R across ~3.7k market-days; with n=1381 events / ~3.5y and day-clustered resampling, design MDE at 80% power / alpha=0.05 is ~0.20-0.25R - the study resolves barely to the friction bar itself.

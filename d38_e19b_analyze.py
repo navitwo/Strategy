@@ -88,6 +88,12 @@ def main():
     out.append("")
     out.append(f"All horizons: " + ", ".join(f"{h}m={verdicts[h]}"
                                              for h in HORIZONS))
+    out.append("")
+    out.append("## Pre-run power diagnostic (MDE)")
+    out.append("Day-level SD of aligned forward R across ~3.7k market-days; "
+               "with n=1381 events / ~3.5y and day-clustered resampling, "
+               "design MDE at 80% power / alpha=0.05 is ~0.20-0.25R - the "
+               "study resolves barely to the friction bar itself.")
     report = "\n".join(out)
     print(report)
     with open(os.path.join(ROOT, "E19B_ANALYSIS.md"), "w",
