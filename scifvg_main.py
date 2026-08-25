@@ -121,9 +121,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.fut.set_fee_model(ScifvgFeeModel(cfg["commission_per_side"]))
         self.fut.set_slippage_model(TickSlippage(cfg["slippage_ticks"]))
 
-        # 5m consolidation via LEAN (replaces hand-rolled acc5 buffer).
-        # Overload note: the symbol-bearing overload is the only one LEAN
-        # exposes to Python for futures subscriptions.
+        # [see PROTOCOL_CONFORMANCE.md]
         self.consolidate(self.fut.symbol, timedelta(minutes=5),
                          self._on_5m_consolidated)
 
@@ -171,8 +169,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
         self.trade_rs = []      # realized R multiples (full trades)
         self.last_mapped = None
-        # BUG4 fix: reconciliation state — ledger is DERIVED from equity events,
-        # never an independent counter. race_* legs track excluded noise legs.
+        # [see PROTOCOL_CONFORMANCE.md]
         self.race_stop_legs = 0
         self.race_tp_legs = 0
         self.race_pnl_usd = 0.0     # PnL of excluded reversal round-trips
@@ -474,6 +471,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.session_tried.add((skey, side))
             self._inc("attempts_used")
             self._inc(f"{self._sk(side)}_attempts")
+            # [see PROTOCOL_CONFORMANCE.md]
+            if str(self.cfg.get("variant", "candidate")) == "events_only":
+                self.Debug("EVENT " + json.dumps({
+                    "t": str(b["et"]), "side": side,
+                    "level": round(level, 2),
+                    "extreme": round((b["low"] if side > 0 else b["high"]), 2),
+                    "close": round(b["close"], 2)}))
+                return
             if pen > self.cfg["sweep_max_ticks"] * self.tick:
                 self._inc(f"{self._sk(side)}_depth_rejects")
                 continue
@@ -505,8 +510,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 s["cisd_deadline"] = idx + self.cfg["cisd_max_bars"]
                 s["ref_open"] = None
                 lo = max(0, idx - 200)
-                # Mirrored CISD (D1): longs reference the last BEARISH candle
-                # into the low; shorts the last BULLISH candle into the high.
+                # [see PROTOCOL_CONFORMANCE.md]
                 for j in range(s["extreme_idx"], lo - 1, -1):
                     bb = self.bars5[j]
                     opposing = (bb["close"] < bb["open"]) if side > 0 \
