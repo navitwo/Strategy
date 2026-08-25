@@ -128,9 +128,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                          self._on_5m_consolidated)
 
         self.tick = 0.25
-        # Slippage model (v2.3): LEAN fills limit orders passively (no
-        # negative selection beyond queue reality) and market orders at next
-        # available price. Stress runs override via cfg["slippage_ticks"].
+        # [see PROTOCOL_CONFORMANCE.md]
         self.slippage_ticks = int(self.cfg.get("slippage_ticks", 1))
         self.point_value = 20.0 if self.is_nq else 2.0
 
@@ -281,7 +279,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         try:
             held = self.portfolio[self.fut.mapped].quantity
             if held != 0:
-                tk = self.market_order(self.fut.mapped, -held, tag=f"EOD-FLATTEN-{getattr(self, '_cycle_seq', 0)}"); self._register_flatten_order(tk, held)
+                mark = getattr(self, "_last_min_close", None) or \
+                    self.entry_avg or self.stop_px
+                slip = 20 * self.tick
+                px = self._rt(mark + slip, up=True) if held < 0 \
+                    else self._rt(mark - slip, up=False)
+                tk = self.limit_order(self.fut.mapped, -held, px,
+                                      tag=f"EOD-FLATTEN-{getattr(self, '_cycle_seq', 0)}")
+                self._register_flatten_order(tk, held)
                 self._inc("eod_flattens")
         except Exception:
             pass
@@ -316,8 +321,12 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 try:
                     held = self.portfolio[cur_mapped].quantity
                     if held != 0:
-                        tk = self.market_order(cur_mapped, -held,
-                                               tag="ROLLOVER-FLATTEN")
+                        _m = getattr(self, "_last_min_close", None)
+                        _px = self._rt((_m or held) + 20 * self.tick
+                                       if held < 0 else (_m or held) - 20 * self.tick,
+                                       up=(held < 0))
+                        tk = self.limit_order(cur_mapped, -held, _px,
+                                              tag="ROLLOVER-FLATTEN")
                         self._register_flatten_order(tk, held)
                         self._inc("flatten_fills")
                 except Exception:
@@ -510,9 +519,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     self._inc(f"{K}_cisd_timeout")
                     self.setup = None
                     return
-                # ABLATION-B: skip the CISD wait entirely (same reference,
-                # immediate trigger on next bar) — measures CISD's marginal
-                # selectivity vs candidate which requires a real trigger.
+                # [see PROTOCOL_CONFORMANCE.md]
                 if str(self.cfg.get("variant", "candidate")) == "ablate_cisd":
                     s["stage"] = "CISD"
                     s["cisd_immediate"] = True
@@ -580,9 +587,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                             if imm is None or g["created"] < imm["created"]:
                                 imm = g
                             continue
-                    # nearest-to-price selection (E16e fix, sign corrected):
-                    # distance from CISD close to the zone's NEAR edge; the
-                    # smallest non-negative distance wins.
+                    # [see PROTOCOL_CONFORMANCE.md]
                     if side > 0:
                         prox = abs(b["close"] - g["hi"])
                     else:
@@ -692,9 +697,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.bars5[-1]["close"] if self.bars5 else 0.0)
         # [see PROTOCOL_CONFORMANCE.md]
         if str(self.cfg.get("variant", "candidate")) == "shadow_moc":
-            # marketable limit (cross 2 ticks): immediate-entry intent with
-            # reliable execution mechanics (market orders proved unreliable
-            # in this LEAN Python environment - E18R diagnosis).
+            # [see PROTOCOL_CONFORMANCE.md]
             mk = self._rt(entry_px_mkt + side * 2 * self.tick,
                           up=(side > 0))
             try:
@@ -1044,9 +1047,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self.qty_max_seen = max(self.qty_max_seen, fq)
                 s = self.setup
                 if s is None:
-                    # Cancel raced the fill (entry registered then wiped).
-                    # Fail closed AND mark this fill as orphaned so the
-                    # cross-check counts it in the denominator.
+                    # [see PROTOCOL_CONFORMANCE.md]
                     self._inc("orphan_entry_fills")
                     self._fail_closed_flatten("entry_fill_no_state")
                     return
@@ -1175,7 +1176,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         try:
             held = self.portfolio[self.fut.mapped].quantity
             if held:
-                tk = self.market_order(self.fut.mapped, -held, tag=f"FC-{reason}"); self._register_flatten_order(tk, held)
+                _m = getattr(self, "_last_min_close", None)
+                _m = getattr(self, "_last_min_close", None)
+                _px = self._rt((_m or held) + 20 * self.tick if held < 0 else (_m or held) - 20 * self.tick, up=(held < 0))
+                tk = self.limit_order(self.fut.mapped, -held, _px, tag=f"FC-{reason}")
+                self._register_flatten_order(tk, held)
         except Exception:
             pass
         self._cancel_ticket(self.stop_ticket)
