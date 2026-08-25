@@ -19,3 +19,7 @@ desktop.ini
 # Editors
 .vscode/
 .idea/
+
+# LEAN CLI local data cache
+/data/
+lean.json
