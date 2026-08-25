@@ -1,0 +1,12 @@
+submitted E19: 58605306a0ffddfa474de45d75173bb3
+status: RuntimeError
+{
+ "r_trades": null,
+ "rec_ok": null,
+ "f_L_attempts": null,
+ "f_S_attempts": null,
+ "f_L_sweep_ok": null,
+ "f_S_sweep_ok": null,
+ "d_events_logged": null,
+ "d_minutes_logged": null
+}

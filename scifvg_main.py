@@ -479,7 +479,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if str(self.cfg.get("variant", "candidate")) == "events_only":
                 self._pending_events.append({
                     "idx0": self._abs_now, "side": side,
-                    "px": agg["close"],
+                    "px": b["close"],
                     "remaining": {h: h for h in
                                   self.cfg.get("event_horizons", [])},
                 })
