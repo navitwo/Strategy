@@ -1313,10 +1313,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             cname = f"E19B-h{e['h_min']}"
             sname = "a" if e.get("bias_aligned") else "o"
             try:
-                ts = int(datetime.fromisoformat(
-                    e["last_reclaim_et"]).timestamp())
+                ts_dt = datetime.fromisoformat(e["last_reclaim_et"])
             except Exception:
-                ts = 0
+                continue
+            ts = ts_dt
             lbl = (f"{e['event_id']}|"
                    f"{int(bool(e.get('shadow_cisd')))}"
                    f"{int(bool(e.get('shadow_fvg')))}"
@@ -1329,7 +1329,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 ch.add_series(so)
                 local[cname] = ch
             sr = local[cname].series[sname]
-            sr.add_point(ts, float(e["ret_r"]), lbl)
+            sr.add_point(ts_dt, float(e['ret_r']), lbl)
         for ch in local.values():
             self.add_chart(ch)
 
