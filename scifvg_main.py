@@ -96,7 +96,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._ev_candidates = []
         self._ev_results = []
         self.charts = {}
-        self._ev_charts = set()
         self.cfg = cfg
         self.is_nq = str(cfg["instrument"]).upper() == "NQ"
 
@@ -923,9 +922,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             for h in list(ev["remaining"]):
                 if self._elapsed_min(ev, agg) >= h:
                     ret_r = ((agg["close"] - ev["px"]) / rd) * ev["side"]
-                    ev["last_ts"] = agg.get("ts")
                     self._ev_results.append({
                         "event_id": ev["event_id"],
+                        "last_reclaim_et": str(agg.get("et")),
                         "bias_aligned": ev["bias_aligned"],
                         "arm": "counter" if not ev["bias_aligned"]
                                else "primary",
@@ -1308,29 +1307,27 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return out
 
     def _export_charts(self):
-        """Chart export."""
+        """Event rows as fully-populated scatter charts (registered once)."""
         for e in getattr(self, "_ev_results", []):
-            ts = e.get("last_ts", 0) or 0
+            cname = f"E19B-h{e['h_min']}"
+            sname = "a" if e.get("bias_aligned") else "o"
+            try:
+                ts = int(datetime.fromisoformat(
+                    e["last_reclaim_et"]).timestamp())
+            except Exception:
+                ts = 0
             g = e.get
-            lbl = (f"{e['event_id']}|{int(bool(g('bias_aligned')))}|"
-                   f"{int(bool(g('shadow_cisd')))}"
+            lbl = (f"{e['event_id']}|{int(bool(g('shadow_cisd')))}"
                    f"{int(bool(g('shadow_fvg')))}"
                    f"{int(bool(g('shadow_ifvg')))}")
-            cname = f"E19B-h{e['h_min']}"
-            sname = "aligned" if e.get("bias_aligned") else "opposed"
-            if cname not in self._ev_charts:
-                self._ev_charts.add(cname)
-            try:
-                seen = getattr(self, "_sr_seen", None)
-                if seen is None:
-                    seen = self._sr_seen = set()
-                if (cname, sname) not in seen:
-                    self.add_series(cname, sname, SeriesType.SCATTER, "R")
-                    seen.add((cname, sname))
-                self.charts[cname].series[sname].add_point(
-                    ts, e["ret_r"], lbl)
-            except Exception:
-                pass
+            if cname not in self.charts:
+                ch = Chart(cname)
+                ch.add_series(ScatterSeries("a"))
+                ch.add_series(ScatterSeries("o"))
+                self.add_chart(ch)
+            sr = [s for s in self.charts[cname].series.values()
+                  if s.name == sname][0]
+            sr.add_point(ts, float(e["ret_r"]), lbl)
 
     def _export_ledgers(self, rec):
         """EVENT/TRADE/META to Object Store."""

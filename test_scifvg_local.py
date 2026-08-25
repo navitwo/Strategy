@@ -90,6 +90,9 @@ class Chart:
         self.name = name
         self.series = {}
 
+    def add_series(self, s):
+        self.series[s.name] = s
+
 
 
 
