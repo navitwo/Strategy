@@ -96,6 +96,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._ev_candidates = []
         self._ev_results = []
         self.charts = {}
+        self._ev_charts = set()
         self.cfg = cfg
         self.is_nq = str(cfg["instrument"]).upper() == "NQ"
 
@@ -1316,14 +1317,17 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                    f"{int(bool(g('shadow_fvg')))}"
                    f"{int(bool(g('shadow_ifvg')))}")
             cname = f"E19B-h{e['h_min']}"
-            if cname not in self.charts:
-                self.add_chart(Chart(cname))
             sname = "aligned" if e.get("bias_aligned") else "opposed"
-            series = self.charts[cname].series.get(sname)
-            if series is None:
-                series = ScatterSeries(sname)
-                self.add_series(cname, series)
-            series.add_point(ts, float(e["ret_r"]), lbl)
+            if cname not in self._ev_charts:
+                self.add_chart(Chart(cname))
+                self.add_series(cname, ScatterSeries("aligned"))
+                self.add_series(cname, ScatterSeries("opposed"))
+                self._ev_charts.add(cname)
+            try:
+                sr = self.charts[cname].series[sname]
+                sr.add_point(ts, float(e["ret_r"]), lbl)
+            except Exception:
+                pass
 
     def _export_ledgers(self, rec):
         """EVENT/TRADE/META to Object Store."""
