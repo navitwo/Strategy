@@ -97,3 +97,10 @@ and R-ledger discipline. Limit: 4 completed experiments → then STOP.
   deterministic replay, execution invariants.
 - Validation + holdout LOCKED. Next dev rerun designated E18R; artifacts
   packaged for independent audit before validation unlocks.
+
+
+## E19 — EVENT STUDY VERDICT (2026-08-23, v2.5.6)
+- 952 bias-aligned sweep/reclaim events resolved at 30/60/120/240m.
+- All horizons: |mean| < 1bp, WR 50.7-51.6%, z < 1. NO directional information.
+- Pre-registered rule: rescue precondition NOT met -> strategy family ARCHIVED.
+- Validation/holdout never touched. No rescue experiments conducted.
