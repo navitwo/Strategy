@@ -1208,7 +1208,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._inc("forced_flattens")
 
     def _sample_equity(self):
-        """Ledger-vs-equity drift detector."""
+        """Equity drift detector."""
         try:
             eq = float(self.portfolio.total_portfolio_value)
         except Exception:
@@ -1307,7 +1307,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return out
 
     def _export_charts(self):
-        """Event rows as fully-populated scatter charts (registered once)."""
+        """Build charts locally; register once at end."""
+        local = {}
         for e in getattr(self, "_ev_results", []):
             cname = f"E19B-h{e['h_min']}"
             sname = "a" if e.get("bias_aligned") else "o"
@@ -1316,18 +1317,21 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     e["last_reclaim_et"]).timestamp())
             except Exception:
                 ts = 0
-            g = e.get
-            lbl = (f"{e['event_id']}|{int(bool(g('shadow_cisd')))}"
-                   f"{int(bool(g('shadow_fvg')))}"
-                   f"{int(bool(g('shadow_ifvg')))}")
-            if cname not in self.charts:
+            lbl = (f"{e['event_id']}|"
+                   f"{int(bool(e.get('shadow_cisd')))}"
+                   f"{int(bool(e.get('shadow_fvg')))}"
+                   f"{int(bool(e.get('shadow_ifvg')))}")
+            if cname not in local:
                 ch = Chart(cname)
-                ch.add_series(Series("a", SeriesType.SCATTER))
-                ch.add_series(Series("o", SeriesType.SCATTER))
-                self.add_chart(ch)
-            sr = [s for s in self.charts[cname].series.values()
-                  if s.name == sname][0]
+                sa = Series("a", SeriesType.SCATTER)
+                so = Series("o", SeriesType.SCATTER)
+                ch.add_series(sa)
+                ch.add_series(so)
+                local[cname] = ch
+            sr = local[cname].series[sname]
             sr.add_point(ts, float(e["ret_r"]), lbl)
+        for ch in local.values():
+            self.add_chart(ch)
 
     def _export_ledgers(self, rec):
         """EVENT/TRADE/META to Object Store."""
