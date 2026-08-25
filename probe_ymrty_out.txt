@@ -1,0 +1,4 @@
+YM bid: 72c00f13eadadd90aad9aa17ef4f369c
+YM Completed. | att: 32 | ev: 64 | os: 64 | ERR: None
+RTY bid: 9e97e8a01e74bbd06bc059c6ef06f32b
+RTY Completed. | att: 32 | ev: 56 | os: 56 | ERR: None

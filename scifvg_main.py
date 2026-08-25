@@ -27,7 +27,7 @@ class TickSlippage:
 INSTRUMENT_SPECS = {
     "NQ":  (Futures.Indices.NASDAQ_100_E_MINI,       0.25, 20.0),
     "MNQ": (Futures.Indices.MICRO_NASDAQ_100_E_MINI, 0.25,  2.0),
-    "ES":  (Futures.Indices.SP500_E_MINI,            0.25, 50.0),
+    "ES":  (Futures.Indices.SP_500_E_MINI,            0.25, 50.0),
     "YM":  (Futures.Indices.DOW_30_E_MINI,           1.00,  5.0),
     "RTY": (Futures.Indices.RUSSELL_2000_E_MINI,     0.10, 50.0),
 }
