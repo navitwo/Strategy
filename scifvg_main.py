@@ -1317,10 +1317,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             except Exception:
                 continue
             ts = ts_dt
-            lbl = (f"{e['event_id']}|"
-                   f"{int(bool(e.get('shadow_cisd')))}"
-                   f"{int(bool(e.get('shadow_fvg')))}"
-                   f"{int(bool(e.get('shadow_ifvg')))}")
             if cname not in local:
                 ch = Chart(cname)
                 sa = Series("a", SeriesType.SCATTER)
@@ -1329,7 +1325,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 ch.add_series(so)
                 local[cname] = ch
             sr = local[cname].series[sname]
-            sr.add_point(ts_dt, float(e['ret_r']), lbl)
+            sr.add_point(ts_dt, float(e['ret_r']))
         for ch in local.values():
             self.add_chart(ch)
 
