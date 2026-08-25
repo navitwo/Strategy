@@ -1,0 +1,12 @@
+submitted E19: 9485a1826a5d4889ed33ba4013770d09
+status: Completed.
+{
+ "r_trades": "0",
+ "rec_ok": "0",
+ "f_L_attempts": "497",
+ "f_S_attempts": "455",
+ "f_L_sweep_ok": "0",
+ "f_S_sweep_ok": "0",
+ "d_events_logged": null,
+ "d_minutes_logged": null
+}

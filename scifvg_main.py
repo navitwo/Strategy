@@ -71,7 +71,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             "pivot_lookback": 3, "pivot_right": 3,
             "max_attempts_per_day": 1, "stop_mode": "sweep",
             "entry_mode": "signal", "random_entry_prob": 0.02,
-            "variant": "candidate",   # candidate|shadow_moc|ablate_cisd|ablate_fvg
+            "variant": "candidate",
+            "event_horizons": [30, 60, 120, 240],   # minutes (E19)
         }
         cfg = {}
         for k, dv in defaults.items():
@@ -87,6 +88,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
         canon = json.dumps(cfg, sort_keys=True, separators=(",", ":"))
         self.exp_hash = hashlib.md5(canon.encode()).hexdigest()[:8]
+        # E19 event study state
+        self._pending_events = []
+        self._ev_results = []   # {"side","horizon_min","ret"}
         self.cfg = cfg
         self.is_nq = str(cfg["instrument"]).upper() == "NQ"
 
@@ -473,11 +477,12 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self._inc(f"{self._sk(side)}_attempts")
             # [see PROTOCOL_CONFORMANCE.md]
             if str(self.cfg.get("variant", "candidate")) == "events_only":
-                self.Debug("EVENT " + json.dumps({
-                    "t": str(b["et"]), "side": side,
-                    "level": round(level, 2),
-                    "extreme": round((b["low"] if side > 0 else b["high"]), 2),
-                    "close": round(b["close"], 2)}))
+                self._pending_events.append({
+                    "idx0": idx, "side": side,
+                    "px": b["close"],
+                    "remaining": {h: h for h in
+                                  self.cfg.get("event_horizons", [])},
+                })
                 return
             if pen > self.cfg["sweep_max_ticks"] * self.tick:
                 self._inc(f"{self._sk(side)}_depth_rejects")
@@ -586,8 +591,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         mid = (g["lo"] + g["hi"]) / 2.0
                         crossed = (b["close"] > mid) if side > 0 else (b["close"] < mid)
                         if crossed:
-                            # includes full traversal (close beyond far edge):
-                            # the CISD bar itself completed the inversion.
+                            # [see PROTOCOL_CONFORMANCE.md]
                             if imm is None or g["created"] < imm["created"]:
                                 imm = g
                             continue
@@ -786,16 +790,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
 
     def _on_5m_consolidated(self, consolidated):
-        """LEAN consolidator callback: exactly one call per completed 5m slot.
-
-        Timezone contract (TZCHECK-enforced): with the algorithm timezone set
-        to New York, LEAN delivers Python datetimes that are NAIVE wall-clock
-        exchange time (ET for NQ). No astimezone conversion is performed —
-        converting would reinterpret already-ET stamps as UTC (4-5h shift).
-        Session rotation also lives here so it advances on the COMPLETED-BAR
-        clock; the old on_data-minute-clock path let PDH/PDL rotate before the
-        session's final buckets were consumed (original BUG3 failure mode).
-        """
+        """One call per completed 5m slot; ET-native stamps; rotation on
+        completed-bar clock (see PROTOCOL_CONFORMANCE.md)."""
         et = consolidated.end_time          # naive ET by algorithm tz contract
         if getattr(self, "_starting_tpv", None) is None:
             try:
@@ -868,6 +864,22 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if self.setup is not None and self.setup["stage"] == "PENDING" \
                 and self.pos_qty == 0:
             self._manage_pending(agg, agg["idx"], et, skey)
+
+        # E19: resolve matured event horizons on completed 5m closes
+        if str(self.cfg.get("variant", "candidate")) == "events_only" \
+                and self._pending_events:
+            still = []
+            for ev in self._pending_events:
+                dt_bars = idx - ev["idx0"]
+                for h, rem in list(ev["remaining"].items()):
+                    if dt_bars >= h // 5:
+                        ret = (b["close"] - ev["px"]) / ev["px"] * ev["side"]
+                        self._ev_results.append(
+                            {"side": ev["side"], "h": h, "ret": ret})
+                        del ev["remaining"][h]
+                if ev["remaining"]:
+                    still.append(ev)
+            self._pending_events = still
 
         warm = et.date() >= self.camp_start
         if str(self.cfg.get("entry_mode", "signal")) == "random":
@@ -1011,8 +1023,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         pass
                     if self._eq_at_entry is not None and (
                             not self._row_written or held != 0):
-                        # unrowed position context OR actual holding closed:
-                        # this event terminated a tracked cycle. Count it.
+                        # [see PROTOCOL_CONFORMANCE.md]
                         self.race_pnl_obs += eq - self._eq_at_entry
                         self._eq_at_entry = eq
                         self._row_written = True   # cycle accounted here
@@ -1201,13 +1212,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     # -------------------------------------------------- reconciliation & gates
     def _sample_equity(self):
-        """Track realized equity deltas per closed design trade (BUG4 fix).
-
-        Called from on_order_event right after a full exit is recorded. The
-        ledger R and the equity delta must agree within tolerance; divergence
-        means the ledger has drifted from the actual account — which is exactly
-        the failure mode that poisoned earlier batches.
-        """
+        """Ledger-vs-equity drift detector (see PROTOCOL_CONFORMANCE.md)."""
         try:
             eq = float(self.portfolio.total_portfolio_value)
         except Exception:
@@ -1217,17 +1222,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._last_equity = eq
 
     def _reconcile_pnl(self):
-        """Hard gate v3: trade_builder is the AUTHORITY for economics.
-
-        Review round 4 verdict: designed-R dollars cannot reconcile against
-        actuals once OCO races/partials exist; stop comparing ledgers.
-        Identities enforced:
-          I1  Σ tb.profit_loss − race/late noise ≈ TPV delta + fees  (cash)
-          I2  fees_actual ≈ modeled ($0.50/side × ledger fills)
-          I3  count identity: every tracked fill explained
-              (ledger rows + orphan entries + late/race events)
-        Design-R statistics remain DESCRIPTIVE; they are never the gate.
-        """
+        """Hard gate: trade_builder-authority identities (see PROTOCOL_CONFORMANCE.md)."""
         out = {"ok": False}
         try:
             tb_trades = list(self.trade_builder.closed_trades)
@@ -1388,6 +1383,17 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                        "i1_tol", "fees_actual", "fees_modeled", "i2_resid",
                        "tpv_delta", "fills_vs_ledger_orphans", "late_events"):
                 self.RuntimeStatistics[f"rec_{rk}"] = str(rec.get(rk))
+            # E19 aggregates: mean signed forward return per horizon (bps)
+            import statistics as _st
+            for h in sorted({e["h"] for e in getattr(self, "_ev_results", [])}):
+                rs = [e["ret"] * 1e4 for e in self._ev_results
+                      if e["h"] == h]
+                if rs:
+                    self.RuntimeStatistics[f"ev_h{h}_n"] = str(len(rs))
+                    self.RuntimeStatistics[f"ev_h{h}_mean_bps"] = \
+                        repr(round(_st.mean(rs), 2))
+                    self.RuntimeStatistics[f"ev_h{h}_wr"] = repr(round(
+                        100.0 * sum(1 for x in rs if x > 0) / len(rs), 2))
         except Exception:
             pass
 
