@@ -95,6 +95,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.exp_hash = hashlib.md5(canon.encode()).hexdigest()[:8]
         self._ev_candidates = []
         self._ev_results = []
+        self.charts = {}
         self.cfg = cfg
         self.is_nq = str(cfg["instrument"]).upper() == "NQ"
 

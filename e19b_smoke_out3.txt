@@ -1,0 +1,13 @@
+E19B-smoke-A: submitted e402f5c589fea0aa96f168acc6f071e0
+E19B-smoke-A: status=RuntimeError
+E19B-smoke-B: submitted 09a954bb492968c898acf3e117a03094
+E19B-smoke-B: status=RuntimeError
+A: attempts=0 candidates~=None os_events=-1
+B: attempts=0 candidates~=None os_events=-1
+REPLAY EQUALITY: identical telemetry (0 keys)
+--------------------------------------------------
+SMOKE RESULT: FAIL
+   A: export mismatch ev=0 os=-1
+   A: no attempts armed
+   B: export mismatch ev=0 os=-1
+   B: no attempts armed
