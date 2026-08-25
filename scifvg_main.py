@@ -1322,8 +1322,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                    f"{int(bool(g('shadow_ifvg')))}")
             if cname not in self.charts:
                 ch = Chart(cname)
-                ch.add_series(ScatterSeries("a"))
-                ch.add_series(ScatterSeries("o"))
+                ch.add_series(Series("a", SeriesType.SCATTER))
+                ch.add_series(Series("o", SeriesType.SCATTER))
                 self.add_chart(ch)
             sr = [s for s in self.charts[cname].series.values()
                   if s.name == sname][0]
