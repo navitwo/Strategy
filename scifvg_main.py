@@ -358,7 +358,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if bk is None or bk["id"] == new_id:
             return
         self.h4_bucket = None
-        # [see PROTOCOL_CONFORMANCE.md for rationale]
+        # [see PROTOCOL_CONFORMANCE.md]
         bars = bk["bars"]
         t0 = bk.get("t0")
         tN = bk.get("tN")
@@ -373,7 +373,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         idx = len(self.h4_pub)
         self.h4_pub.append({"idx": idx, "open": o, "high": h, "low": l, "close": c})
 
-        # [see PROTOCOL_CONFORMANCE.md for rationale]
+        # [see PROTOCOL_CONFORMANCE.md]
         if self.h4_gap_pending:
             self.h4_gap_pending = False   # consume: this bar cannot confirm pivots
         else:
@@ -839,38 +839,16 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
         self._accumulate_h4(agg)
 
-        # resolve unfilled-entry watches: first touch of TP or stop wins/loses
-        if self.unfilled_watch:
-            still = []
-            for w in self.unfilled_watch:
-                hit_tp = agg["high"] >= w["tp"] if w["side"] > 0 \
-                    else agg["low"] <= w["tp"]
-                hit_st = agg["low"] <= w["stop"] if w["side"] > 0 \
-                    else agg["high"] >= w["stop"]
-                if hit_tp or hit_st:
-                    self.fun["unfilled_won"] = self.fun.get("unfilled_won", 0) \
-                        + (1 if hit_tp else 0)
-                    self.fun["unfilled_lost"] = self.fun.get("unfilled_lost", 0) \
-                        + (1 if hit_st else 0)
-                    self.unfilled_resolved_n += 1
-                elif w["deadline"] is not None and agg["idx"] >= w["deadline"]:
-                    self.fun["unfilled_timeout"] = \
-                        self.fun.get("unfilled_timeout", 0) + 1
-                    self.unfilled_resolved_n += 1
-                else:
-                    still.append(w)
-            self.unfilled_watch = still
-
         if self.setup is not None and self.setup["stage"] == "PENDING" \
                 and self.pos_qty == 0:
             self._manage_pending(agg, agg["idx"], et, skey)
 
-        # E19: resolve matured event horizons on completed 5m closes
-        if str(self.cfg.get("variant", "candidate")) == "events_only" \
-                and self._pending_events:
+        # E19: resolve matured event horizons
+        if self._pending_events and str(self.cfg.get(
+                "variant", "candidate")) == "events_only":
             still = []
             for ev in self._pending_events:
-                dt_bars = idx - ev["idx0"]
+                dt_bars = agg["idx"] - ev["idx0"]
                 for h, rem in list(ev["remaining"].items()):
                     if dt_bars >= h // 5:
                         ret = (b["close"] - ev["px"]) / ev["px"] * ev["side"]
@@ -1014,7 +992,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         self.fun.get("late_closes", 0) + 1
                     return
                 if self.pos_side == 0 and self.exit_qty_acc == 0:
-                    # [see PROTOCOL_CONFORMANCE.md for rationale]
+                    # [see PROTOCOL_CONFORMANCE.md]
                     eq = self._equity()
                     held = 0
                     try:
@@ -1074,7 +1052,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self.exit_qty_acc = 0
                 self._eq_at_entry = self._equity()
                 self._row_written = False
-                # [see PROTOCOL_CONFORMANCE.md for rationale]
+                # [see PROTOCOL_CONFORMANCE.md]
                 self._cycle_seq = getattr(self, "_cycle_seq", 0) + 1
                 self._cyc_mfe = 0.0
                 self._cyc_mae = 0.0
@@ -1265,7 +1243,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         lates = self.fun.get("late_fill_events", 0)
         flatfills = self.fun.get("flatten_fills", 0)
         late_closes = self.fun.get("late_closes", 0)
-        # [see PROTOCOL_CONFORMANCE.md for rationale]
+        # [see PROTOCOL_CONFORMANCE.md]
         cycles_opened = self.fun.get("L_cycles_opened", 0) + \
             self.fun.get("S_cycles_opened", 0)
         atomic_exits = self.fun.get("atomic_exits", 0)
@@ -1372,6 +1350,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.RuntimeStatistics["f_untracked_fills"] = \
                 str(self.fun.get("untracked_fills", 0))
             self.RuntimeStatistics["d_rows_total"] = str(len(self.trade_economics))
+            self.RuntimeStatistics["d_ev_results"] = \
+                str(len(getattr(self, "_ev_results", [])))
+            self.RuntimeStatistics["d_pending_events"] = \
+                str(len(getattr(self, "_pending_events", [])))
             self.RuntimeStatistics["d_open_at_end"] = str(held)
             self.RuntimeStatistics["d_ledger_rows"] = str(len(self.trade_economics))
             self.RuntimeStatistics["d_race_rows"] = str(sum(
