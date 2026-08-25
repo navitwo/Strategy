@@ -420,7 +420,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.h4_bucket["tN"] = b5["et"]
 
     def _scan_fvgs(self, upto_idx, side):
-        """3-candle FVGs opposing `side`, known at close of bar i."""
+        """3-candle opposing FVGs."""
         out = []
         lo = max(2, upto_idx - self.cfg["fvg_max_age_bars"])
         m = self.cfg["fvg_min_ticks"] * self.tick
@@ -1096,7 +1096,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                                        self.time)
 
     def _resolve_cycle_minute(self, o, h, l, c, bar_end_et):
-        """Cycle resolution."""
+        """Cycle resolve."""
         side = self.pos_side
         if side == 0 or self.risk_dist is None or self.entry_avg is None:
             return
@@ -1179,7 +1179,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             pass
 
     def _register_flatten_order(self, ticket, held_qty):
-        """Track a flatten order fill."""
+        """Track flatten fill."""
         if ticket is None:
             return
         self.order_purpose[ticket.order_id] = ("flatten", 1 if held_qty < 0 else -1)
@@ -1319,13 +1319,16 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             cname = f"E19B-h{e['h_min']}"
             sname = "aligned" if e.get("bias_aligned") else "opposed"
             if cname not in self._ev_charts:
-                self.add_chart(Chart(cname))
-                self.add_series(cname, Series("aligned", SeriesType.SCATTER))
-                self.add_series(cname, Series("opposed", SeriesType.SCATTER))
                 self._ev_charts.add(cname)
             try:
-                sr = self.charts[cname].series[sname]
-                sr.add_point(ts, float(e["ret_r"]), lbl)
+                seen = getattr(self, "_sr_seen", None)
+                if seen is None:
+                    seen = self._sr_seen = set()
+                if (cname, sname) not in seen:
+                    self.add_series(cname, sname, SeriesType.SCATTER, "R")
+                    seen.add((cname, sname))
+                self.charts[cname].series[sname].add_point(
+                    ts, e["ret_r"], lbl)
             except Exception:
                 pass
 

@@ -133,6 +133,7 @@ def make_alg():
     a._ev_candidates = []    # v2.6 E19B candidates (post-reclaim)
     a._ev_results = []
     a.charts = {}
+    a._ev_charts = set()
     a.trade_economics = []
     a._starting_tpv = 100000.0
     a.trade_rs = []
