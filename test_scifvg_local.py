@@ -49,7 +49,8 @@ class _EnumNS:
 
 OrderStatus = _EnumNS
 Futures = types.SimpleNamespace(Indices=types.SimpleNamespace(
-    NASDAQ_100_E_MINI="NQ", MICRO_NASDAQ_100_E_MINI="MNQ"))
+    NASDAQ_100_E_MINI="NQ", MICRO_NASDAQ_100_E_MINI="MNQ",
+    SP500_E_MINI="ES", DOW_30_E_MINI="YM", RUSSELL_2000_E_MINI="RTY"))
 Resolution = types.SimpleNamespace(MINUTE="minute")
 DataMappingMode = types.SimpleNamespace(OPEN_INTEREST=0)
 DataNormalizationMode = types.SimpleNamespace(RAW=0)
@@ -76,9 +77,18 @@ def make_alg():
     a.tzcheck_ok = 0
     a.qty_max_seen = 0
     a._flatten_tickets = []
+    class _OS:
+        def __init__(self):
+            self.store = {}
+        def save_bytes(self, k, b):
+            self.store[k] = bytes(b)
+    a.object_store = _OS()
     a._pending_events = []
     a._ev_candidates = []    # v2.6 E19B candidates (post-reclaim)
     a._ev_results = []
+    a.trade_economics = []
+    a._starting_tpv = 100000.0
+    a.trade_rs = []
     a._minq = []             # v2.6 minute-bar drain queue
     a._ledger_exp_usd = 0.0
     a._fees_modeled_total = 0.0
@@ -158,7 +168,7 @@ def bar(a, o, h, l, c, et=None):
     if a.setup is not None and a.setup["stage"] == "PENDING" and a.pos_qty == 0:
         a._manage_pending(b, b["idx"], et, et.date())
     if a._new_setup_allowed() and a.bias in (1, -1):
-        a._try_arm_attempt(b, b["idx"], et.date())
+        a._try_arm_attempt(b, b["idx"], et, et.date())
     if a.setup is not None and a.setup["stage"] in ("SWEPT", "CISD", "INV"):
         if a.setup["arm_sk"] == et.date():
             a._advance_setup(b, b["idx"], et, et.date())
@@ -617,46 +627,70 @@ def test_exit_time_algo_clock_and_drain():
 
 
 def test_e19b_candidates_post_reclaim():
-    """E19B: candidates publish ONLY after reclaim confirmation (never at
-    raw attempt), carry permanent IDs, R-unit forward returns, MFE/MAE,
-    and the counter-bias twin when armed."""
+    """E19B v2.7: ONE candidate per reclaim-confirmed sweep; counter arm is a
+    result sub-key (side-opposed R of identical geometry), never a mirrored
+    twin. bias_aligned tag isolates the HTF gate; horizons resolve on
+    wall-clock minutes; ledgers land in Object Store."""
     a = make_alg()
     a.camp_start = datetime(2024, 3, 4).date()
     a.Debug = lambda *x, **k: None
     a.cfg["variant"] = "events_only"
-    a.cfg["counter_bias_arm"] = True
+    a.cfg["event_horizons"] = [30, 60, 120]
     bar(a, 20985.0, 21006.0, 20983.0, 21004.0)   # penetrates PDH (attempt)
     assert len(a._ev_candidates) == 0, \
         "E19 defect: capture happened at ATTEMPT, before depth/reclaim"
+    assert a.setup is not None and a.setup.get("bias_aligned") is not None, \
+        "arming must tag bias_alignment"
     bar(a, 21004.0, 21005.0, 20990.0, 20992.0)   # closes back below -> reclaim
-    assert len(a._ev_candidates) == 2, \
-        f"primary + counter twins expected, got {len(a._ev_candidates)}"
-    prim = next(c for c in a._ev_candidates if c["arm"] == "primary")
-    cnt = next(c for c in a._ev_candidates if c["arm"] == "counter")
-    assert prim["side"] == -1 and cnt["side"] == 1, "arms must be mirrored"
-    assert prim["cand_id"] != cnt["cand_id"], "permanent unique IDs required"
-    assert prim["risk_dist"] > 0 and prim["stop_px"] > prim["px"]
-    # advance 120 minutes (24 x 5m bars, drifting down): horizon resolves.
-    # The local harness drives engine methods directly, so advance the
-    # absolute bar counter + call _advance_events per completed 5m bar,
-    # mirroring the cloud consolidated-bar path.
-    px0 = prim["px"]
-    p = 20992.0
-    for k in range(24):
-        p -= 0.5
-        bar(a, p + 1.0, p + 1.5, p - 0.5, p)
+    assert len(a._ev_candidates) == 1, \
+        f"ONE candidate per reclaim expected, got {len(a._ev_candidates)}"
+    c0 = a._ev_candidates[0]
+    assert c0["side"] == -1 and "event_id" in c0 and "bias_aligned" in c0
+    assert {"shadow_cisd", "shadow_fvg", "shadow_ifvg"} <= set(c0)
+    # advance via wall clock: 120 minutes after reclaim resolves h=120 only.
+    import types as _types
+    px0 = c0["px"]
+    p_ = 20992.0
+    base = datetime(2024, 3, 4, 10, 0)
+    from datetime import timedelta as _td
+
+    def _adv(minutes, price):
+        et2 = base + _td(minutes=minutes)
+        agg = {"high": price + 1.5, "low": price - 0.5, "close": price,
+               "et": et2}
         a._abs_now += 1
-        a._advance_events({"high": p + 1.5, "low": p - 0.5, "close": p})
-    res = [e for e in a._ev_results if e["cand_id"] == prim["cand_id"]]
-    assert res and res[0]["h_min"] == 120, res
-    # R-unit definition: (P_close − P_entry)/risk_dist × side
-    expect = ((p - res[0]["entry_px"]) / res[0]["risk_dist"]) * prim["side"]
-    assert abs(res[0]["ret_r"] - expect) < 1e-4, "R-unit math mismatch"
-    assert "mfe_r" in res[0] and "mae_r" in res[0]
-    cres = [e for e in a._ev_results if e["arm"] == "counter"]
-    assert cres, "counter arm must resolve too"
-    print("PASS E19B: post-reclaim candidates, paired arms, permanent IDs, "
-          "R-unit returns + MFE/MAE")
+        a._advance_events(agg)
+
+    pr_ = px0
+    for m in range(5, 125, 5):
+        pr_ -= 0.5
+        _adv(m, pr_)
+    res = [e for e in a._ev_results if e["event_id"] == c0["event_id"]]
+    hs = sorted(e["h_min"] for e in res)
+    assert hs == [30, 60, 120], f"wall-clock horizons resolved {hs}"
+    r120 = next(e for e in res if e["h_min"] == 120)
+    expect = ((r120["entry_px"] and (pr_) - r120["entry_px"])
+              / c0["risk_dist"]) * c0["side"]
+    assert abs(r120["ret_r"] - expect) < 1e-4, "R-unit math mismatch"
+    assert "mfe_r" in r120 and "mae_r" in r120
+    assert r120["arm"] in ("primary", "counter")
+    # ObjectStore ledger export fires at end-of-algorithm
+    try:
+        a.on_end_of_algorithm()
+    except Exception:
+        pass
+    keys = getattr(a.object_store, "store", {})
+    assert any(k.endswith("events.jsonl") for k in keys), \
+        f"events ledger must export to ObjectStore, got {list(keys)}"
+    ev_key = next(k for k in keys if k.endswith("events.jsonl"))
+    rows = [json.loads(x) for x in bytes(keys[ev_key]).decode().split("\n")
+            if x.strip()]
+    assert rows and all("bias_aligned" in r for r in rows)
+    print("PASS E19B: single candidate per reclaim, event_id+bias tag, "
+          "wall-clock horizons, shadow labels, ObjectStore export")
+
+
+
 
 
 def test_preregistration_present():

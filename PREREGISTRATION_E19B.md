@@ -42,25 +42,32 @@ for the friction-adjusted threshold. Mitigation is design-based, not p-hacking:
 replication across **ES, YM, RTY** (~1,800 pooled events; development-window data
 only — validation and holdout are not touched), plus the paired counter-bias arm.
 
-## 4. Three pre-registered outcomes (not two)
+## 4. Three pre-registered outcomes (not two) — AMENDED v2 (2026-08-25)
 
-Let Δ = pooled mean side-aligned forward R-drift at H\*, and let MDE be the
-§3 minimum detectable effect:
+Let Δ = pooled mean side-aligned forward R-drift at H\*. The outcome rule is
+anchored on the FIXED economic threshold θ = 0.2R (friction bar), not on MDE:
+MDE is a property of the design and using it as the decision boundary makes
+"null" easier the noisier the data. MDE is computed and reported as a
+PRE-RUN POWER DIAGNOSTIC ONLY.
 
-1. **POSITIVE** — bootstrap 95% CI for Δ excludes 0 AND Δ > 0.2R (friction bar):
+1. **POSITIVE** — bootstrap 95% CI lower bound for Δ exceeds 0.2R:
    eligible to trigger the capped rescue study (§5).
-2. **NULL** — the 95% CI excludes the MDE entirely while failing POSITIVE:
+2. **NULL** — the 95% CI upper bound for Δ falls below 0.2R:
    the word "archived" is earned; strategy family stays archived.
-3. **INCONCLUSIVE** — the CI contains the MDE boundary region (neither 1 nor 2):
-   no archive claim, no rescue claim; the study reports itself as uninformative
-   at current power.
+3. **INCONCLUSIVE** — the CI straddles 0.2R (neither 1 nor 2):
+   no archive claim, no rescue claim; the study reports itself as
+   uninformative at current power.
 
+The rule is applied OFFLINE, without amendment, after seeing the numbers.
 Only outcome 2 earns the word "archived." Only outcome 1 opens §5.
 
 ## 5. Multiplicity control (in writing, before data)
 
-- **Single primary hypothesis**: mean side-aligned forward R-drift at H\* on the
-  pooled reclaimed-sweep population. It is the SOLE trigger for the capped
+- **Single primary hypothesis**: mean side-aligned forward R-drift at H\* on
+  the population POOLED ACROSS MARKETS over rows where bias_aligned == True
+  ONLY — never pooled across arms (the counter arm is a within-candidate
+  contrast reported separately, never merged into Δ). It is the SOLE trigger
+  for the capped
   **6–8-run rescue study** (any rescue simulator must carry slippage + fees;
   the frictionless assumption is precisely what produced E18S's false positive).
 - Everything else — other horizons, side splits, era/time-of-day/rollover
