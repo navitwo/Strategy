@@ -478,8 +478,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             # [see PROTOCOL_CONFORMANCE.md]
             if str(self.cfg.get("variant", "candidate")) == "events_only":
                 self._pending_events.append({
-                    "idx0": idx, "side": side,
-                    "px": b["close"],
+                    "idx0": self._abs_now, "side": side,
+                    "px": agg["close"],
                     "remaining": {h: h for h in
                                   self.cfg.get("event_horizons", [])},
                 })
@@ -808,6 +808,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         }
         self.bars5.append(agg)
         self.d_bars5_total += 1
+        self._abs_bar = getattr(self, "_abs_bar", -1) + 1
+        self._abs_now = self._abs_bar
+        agg["abs"] = self._abs_bar
         if len(self.bars5) > 600:
             trim = len(self.bars5) - 600
             del self.bars5[:trim]
@@ -848,10 +851,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 "variant", "candidate")) == "events_only":
             still = []
             for ev in self._pending_events:
-                dt_bars = agg["idx"] - ev["idx0"]
+                dt_bars = self._abs_now - ev["idx0"]
                 for h, rem in list(ev["remaining"].items()):
                     if dt_bars >= h // 5:
-                        ret = (b["close"] - ev["px"]) / ev["px"] * ev["side"]
+                        ret = (agg["close"] - ev["px"]) / ev["px"] * ev["side"]
                         self._ev_results.append(
                             {"side": ev["side"], "h": h, "ret": ret})
                         del ev["remaining"][h]
