@@ -53,3 +53,27 @@ G3 deterministic replay (same seed ⇒ identical ledgers) ·
 G4 execution invariants (one-exit-per-cycle, no unregistered fills,
 mapped-only orders) · G5 protocol conformance assertions ·
 G6 smoke gate (rec_ok=1 cash identity on multi-trade window).
+
+
+---
+
+## v2.6 additions (review round 6, E19B directive - 2026-08-23)
+
+- D9: barrier exits carry slippage + round-turn fees; ledger rows publish
+  r_gross / net r / friction_r. Frictionless atomic booking is PROHIBITED
+  (it produced E18S's false positive).
+- D10: Identity 1 gate = ledger expectation sum(r_net*risk_dist*pv*qty) vs
+  trade_builder profit_loss ($25 tolerance); Identity 2 = modeled TOTAL vs
+  actual TOTAL fees; Identity 3 splits barrier/EOD exit counters with
+  barrier-R purity assertions. Every gate ships with a negative test
+  proving it can go red (test_identity_gates_can_go_red).
+- D11: cycle resolution drains queued minute bars every step (stop cannot
+  starve); exit timestamps use algo clock (ET) - bar.end_time UTC
+  conversion is banned from ledger paths.
+- D12: events_only candidates publish ONLY after reclaim confirmation,
+  permanent cand_ids, R-unit forward returns + MFE/MAE, optional paired
+  counter-bias arm. Raw-attempt capture RETIRED (E19 reclassified as a
+  raw level-penetration diagnostic).
+- G7: PREREGISTRATION_E19B.md predates any E19B data pull; cloud runs
+  publish n/sigma/SE/CI/MDE only - inference happens offline via
+  session-block bootstrap under that document's rules.

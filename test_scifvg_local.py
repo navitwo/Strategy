@@ -77,7 +77,14 @@ def make_alg():
     a.qty_max_seen = 0
     a._flatten_tickets = []
     a._pending_events = []
+    a._ev_candidates = []    # v2.6 E19B candidates (post-reclaim)
     a._ev_results = []
+    a._minq = []             # v2.6 minute-bar drain queue
+    a._ledger_exp_usd = 0.0
+    a._fees_modeled_total = 0.0
+    a._abs_now = 0
+    a.time = None
+    a.exp_hash = "test"
     a._last_min_close = None
 
     a.unfilled_watch = []
@@ -97,9 +104,14 @@ def make_alg():
         "cisd_max_bars": 12, "inv_max_bars": 12, "retest_max_bars": 24,
         "fvg_min_ticks": 4, "fvg_max_age_bars": 60, "stop_buffer_ticks": 4,
         "target_r": 2.0, "risk_usd": 100.0, "max_contracts": 10,
+        "commission_per_side": 0.50, "slippage_ticks": 1,
     }
+    # v2.6 E19B knobs
+    a.cfg.setdefault("event_horizons", [120])
+    a.cfg.setdefault("counter_bias_arm", False)
     a.tick = 0.25
     a.point_value = 2.0
+    a.slippage_ticks = int(a.cfg["slippage_ticks"])
     a.ny = None
     a.bars5 = []
     a.h4_pub = []
@@ -403,7 +415,15 @@ def test_oco_single_exit_invariant():
                             datetime(2024, 3, 4, 10, 17))
     assert len(a.trade_economics) == 1, "exactly one exit"
     row = a.trade_economics[0]
-    assert row["exit_kind"] == "stop" and row["r"] == -1.0
+    assert row["exit_kind"] == "stop" and row["r_gross"] == -1.0
+    # v2.6: net r must be strictly below gross (friction), never above
+    assert -1.05 < row["r"] < -1.0, f"net r {row['r']} vs gross {row['r_gross']}"
+    assert row["friction_r"] < 0 and abs(row["friction_r"]) < 0.05
+    # v2.6 identity accumulators must have moved by exactly this row's USD
+    pv_qty = a.point_value * max(int(a.pos_qty) or 1, 1)
+    exp_row_usd = row["r_gross"] * row["risk_dist"] * pv_qty \
+        + row["friction_r"] * row["risk_dist"] * pv_qty
+    assert abs((a._ledger_exp_usd - exp_row_usd)) < 1e-6
     assert row["cycle_id"] and row["candidate"] == "candidate"
     assert row["mfe_r"] == 2.25 and row["mae_r"] == -1.25  # m2 high 18045
     assert a.pos_side == 0 and a.pos_qty == 0 and a.entry_avg is None
@@ -496,6 +516,165 @@ def test_mirrored_cisd_reference():
     print("PASS mirrored CISD: short setup references bullish counter-candle")
 
 
+def _mk_open_cycle(a):
+    """Fixture: open in-flight long cycle, entry 18000 / stop 17990 / tp 18020."""
+    a.pos_side = 1
+    a.pos_qty = 1
+    a.entry_avg = 18000.0
+    a.stop_px = 17990.0
+    a.tp_px = 18020.0
+    a.risk_dist = 10.0
+    a._cyc_mfe = 0.0
+    a._cyc_mae = 0.0
+    a._cyc_entry_ts = "2024-03-04 10:00:00"
+    a._row_written = False
+    a._cycle_seq = 1
+    a.exp_hash = "t26"
+    a.trade_economics = []
+    a.trade_rs = []
+    return a
+
+
+def test_identity_gates_can_go_red():
+    """v2.6 NEGATIVE tests: every corrected identity must FAIL when its
+    invariant is violated — proving none of the gates is vacuous
+    (the E18S defect was gates that could not go red)."""
+    import types as _t
+
+    def mk_rec(ledger_exp, builder_pl, fees_actual, fees_modeled,
+               rows=None, anomalies=0):
+        a = make_alg()
+        a._ledger_exp_usd = ledger_exp
+        a._fees_modeled_total = fees_modeled
+        a.trade_builder = _t.SimpleNamespace(closed_trades=[
+            _t.SimpleNamespace(profit_loss=builder_pl,
+                               total_fees=fees_actual)])
+        a.portfolio = _t.SimpleNamespace(total_portfolio_value=100000.0)
+        # cash view kept clean: TPV moved exactly by builder P&L minus fees
+        a._starting_tpv = 100000.0 - (builder_pl - fees_actual)
+        if rows is None:
+            rows = [{"exit_kind": "stop", "r": -1.05, "r_gross": -1.0,
+                     "risk_dist": 10.0}]
+        a.trade_economics = rows
+        a.fun.update({"L_fills": len(rows), "S_fills": 0,
+                      "L_cycles_opened": len(rows), "S_cycles_opened": 0,
+                      "atomic_exits": len(rows),
+                      "anomalous_exit_events": anomalies,
+                      "untracked_fills": 0})
+        a.cfg["target_r"] = 2.0
+        return a._reconcile_pnl()
+
+    # consistent world -> GREEN (net r = (-1.0*10*2 - 1) / 20 = -1.05)
+    base = mk_rec(-21.0, -21.0, 1.0, 1.0)
+    assert base["ok"], f"consistent world must reconcile: {base}"
+    assert base["i1_ledger_resid"] <= 25 and base["i2_resid"] <= 25
+
+    # Identity 1 RED: ledger expectation diverges from broker bookings
+    # (the frictionless-booking failure mode; drift scaled past tolerance)
+    r1 = mk_rec(-121.0, -21.0, 1.0, 1.0)
+    assert not r1["ok"] and r1["i1_ledger_resid"] > 25, r1
+
+    # Identity 2 RED: modeled total fees diverge from actual total fees
+    r2 = mk_rec(-21.0, -21.0, 101.0, 1.0)
+    assert not r2["ok"] and r2["i2_resid"] > 25, r2
+
+    # Identity 3 RED (anomaly prong): unexplained exit event breaks I3
+    r3 = mk_rec(-21.0, -21.0, 1.0, 1.0, anomalies=1)
+    assert not r3["ok"], r3
+
+    # Barrier-purity RED: stop row whose gross R drifted off -1.0 by
+    # construction cannot pass (frictionless misbooking detector)
+    bad_rows = [{"exit_kind": "stop", "r": -1.05, "r_gross": -0.97,
+                 "risk_dist": 10.0}]
+    r4 = mk_rec(-21.0, -21.0, 1.0, 1.0, rows=bad_rows)
+    assert not r4["ok"] and r4["barrier_purity_violations"] >= 1, r4
+
+    print("PASS identity negative tests: I1/I2/I3/purity all go red "
+          "on violation")
+
+
+def test_exit_time_algo_clock_and_drain():
+    """v2.6 regressions: (a) exit_time stamped from algo clock (exchange-
+    local), never the UTC bar.end_time that shifted E18S ledgers 4-5h;
+    (b) multi-bar batches drain fully — a missed minute event can no longer
+    starve the stop until EOD (shadowMOC avgL=-1.287 failure mode)."""
+    from datetime import datetime as _dt
+    a = make_alg()
+    _mk_open_cycle(a)
+    # two queued minute bars: first benign, second breaches stop 17990
+    a._minq = [{"o": 18000, "h": 18001, "l": 17995, "c": 17996},
+               {"o": 17996, "h": 17997, "l": 17980, "c": 17985}]
+    a.time = _dt(2024, 3, 4, 10, 17)
+    a._drain_minq()
+    assert len(a.trade_economics) == 1, "second bar must resolve"
+    row = a.trade_economics[0]
+    assert row["exit_kind"] == "stop"
+    et = _dt.fromisoformat(row["exit_time"])
+    assert (et.hour, et.minute) == (10, 17), \
+        f"exit_time not algo-clock ET: {row['exit_time']}"
+    assert a._minq == [], "queue must be empty after resolution"
+    print("PASS algo-clock exit stamps + full-batch drain (starvation fixed)")
+
+
+def test_e19b_candidates_post_reclaim():
+    """E19B: candidates publish ONLY after reclaim confirmation (never at
+    raw attempt), carry permanent IDs, R-unit forward returns, MFE/MAE,
+    and the counter-bias twin when armed."""
+    a = make_alg()
+    a.camp_start = datetime(2024, 3, 4).date()
+    a.Debug = lambda *x, **k: None
+    a.cfg["variant"] = "events_only"
+    a.cfg["counter_bias_arm"] = True
+    bar(a, 20985.0, 21006.0, 20983.0, 21004.0)   # penetrates PDH (attempt)
+    assert len(a._ev_candidates) == 0, \
+        "E19 defect: capture happened at ATTEMPT, before depth/reclaim"
+    bar(a, 21004.0, 21005.0, 20990.0, 20992.0)   # closes back below -> reclaim
+    assert len(a._ev_candidates) == 2, \
+        f"primary + counter twins expected, got {len(a._ev_candidates)}"
+    prim = next(c for c in a._ev_candidates if c["arm"] == "primary")
+    cnt = next(c for c in a._ev_candidates if c["arm"] == "counter")
+    assert prim["side"] == -1 and cnt["side"] == 1, "arms must be mirrored"
+    assert prim["cand_id"] != cnt["cand_id"], "permanent unique IDs required"
+    assert prim["risk_dist"] > 0 and prim["stop_px"] > prim["px"]
+    # advance 120 minutes (24 x 5m bars, drifting down): horizon resolves.
+    # The local harness drives engine methods directly, so advance the
+    # absolute bar counter + call _advance_events per completed 5m bar,
+    # mirroring the cloud consolidated-bar path.
+    px0 = prim["px"]
+    p = 20992.0
+    for k in range(24):
+        p -= 0.5
+        bar(a, p + 1.0, p + 1.5, p - 0.5, p)
+        a._abs_now += 1
+        a._advance_events({"high": p + 1.5, "low": p - 0.5, "close": p})
+    res = [e for e in a._ev_results if e["cand_id"] == prim["cand_id"]]
+    assert res and res[0]["h_min"] == 120, res
+    # R-unit definition: (P_close − P_entry)/risk_dist × side
+    expect = ((p - res[0]["entry_px"]) / res[0]["risk_dist"]) * prim["side"]
+    assert abs(res[0]["ret_r"] - expect) < 1e-4, "R-unit math mismatch"
+    assert "mfe_r" in res[0] and "mae_r" in res[0]
+    cres = [e for e in a._ev_results if e["arm"] == "counter"]
+    assert cres, "counter arm must resolve too"
+    print("PASS E19B: post-reclaim candidates, paired arms, permanent IDs, "
+          "R-unit returns + MFE/MAE")
+
+
+def test_preregistration_present():
+    """Structural gate: PREREGISTRATION_E19B.md must exist with the three
+    outcome classes, multiplicity plan, numeric stable-positive definition,
+    and exploratory labeling — committed BEFORE any E19B data pull."""
+    import os
+    path = ROOT + r"\PREREGISTRATION_E19B.md"
+    assert os.path.exists(path), "pre-registration file missing"
+    doc = open(path, encoding="utf-8").read().lower()
+    for needle in ("inconclusive", "holm", "bonferroni",
+                   "minimum detectable effect", "12/15", "3/4", "0.2r",
+                   "exploratory", "block bootstrap"):
+        assert needle in doc, f"preregistration missing: {needle}"
+    print("PASS preregistration: outcomes/multiplicity/stable-positive "
+          "committed before data")
+
+
 if __name__ == "__main__":
     test_short_sweep_reclaim_cisd()
     test_long_mirror()
@@ -511,4 +690,8 @@ if __name__ == "__main__":
     test_protocol_conformance()
     test_deterministic_replay()
     test_mirrored_cisd_reference()
+    test_identity_gates_can_go_red()
+    test_exit_time_algo_clock_and_drain()
+    test_e19b_candidates_post_reclaim()
+    test_preregistration_present()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")

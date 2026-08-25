@@ -1,5 +1,37 @@
 # E19 — EVENT STUDY: HTF-BIAS + SWEEP/RECLAIM FORWARD RETURNS (v2.5.6)
 
+> ## ⚠️ RECLASSIFICATION (2026-08-23, review round 6 — E19B directive)
+>
+> This study measured **raw bias-aligned level penetrations**, not sweep/reclaim
+> events. Verified in code: the `events_only` branch inside `_try_arm_attempt`
+> returned immediately after the min-penetration check — BEFORE the
+> `sweep_max_ticks` depth reject and BEFORE reclaim confirmation. Confirmed by
+> its own funnel: `f_attempts_used=952` with `f_L_sweep_ok=0`,
+> `f_depth_rejects=0`, `f_no_reclaim=0` (a genuine sweep/reclaim study must show
+> non-zero values in all three). E19 is therefore relabeled a **raw
+> level-penetration diagnostic**.
+>
+> Additional statistical deficiencies, per the directive: it published no σ,
+> no t-statistic on the means (only binomial win-rate z), no confidence
+> intervals, no block bootstrap, and no MFE/MAE; its stated per-event vol of
+> "~10–20 bps" contradicts NQ's actual ~50–70 bps dispersion at 120 minutes.
+> The true reclaimed population is **449** (952 → 159 depth rejects → 449
+> sweep_ok), not 952.
+>
+> **Consequence:** the "no directional information → ARCHIVED" verdict is
+> WITHDRAWN as an archive justification. Under PREREGISTRATION_E19B.md's three
+> outcome classes (positive / null / inconclusive), a study with this
+> mislabeled population and no power reporting can earn at most
+> **INCONCLUSIVE**. The strategy family's archive status is suspended pending
+> E19B, which reruns the idea correctly: post-reclaim candidate capture,
+> R-unit forward returns, paired counter-bias control, cross-market
+> replication (ES/YM/RTY dev data only), and n/σ/SE/CI/MDE reported before
+> any p-values.
+
+---
+
+# ORIGINAL (RECLASSIFIED) REPORT — preserved unedited below
+
 Question (review round 5): does the HTF-bias + sweep/reclaim signal family
 contain ANY forward directional information on NQ intraday, independent of
 entry mechanism, gates, or costs?

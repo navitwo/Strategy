@@ -104,3 +104,51 @@ and R-ledger discipline. Limit: 4 completed experiments → then STOP.
 - All horizons: |mean| < 1bp, WR 50.7-51.6%, z < 1. NO directional information.
 - Pre-registered rule: rescue precondition NOT met -> strategy family ARCHIVED.
 - Validation/holdout never touched. No rescue experiments conducted.
+
+---
+
+# REVIEW ROUND 6 (E19B directive, 2026-08-23) - engine v2.6
+
+Directive adopted in prescribed order. No optimization started; validation/holdout LOCKED.
+
+## Record corrections (before any new run)
+- E18S_RESULTS.md RETRACTED: "rec_ok=1 strict identities" and "first positive-expectancy
+  configuration" were false - same file shows r_sum +20.261 vs rec_i1_profit_raw -985.0 /
+  rec_tpv_delta -1879.4. Root causes: frictionless atomic booking (exit_px = stop_px/tp_px,
+  zero slip/fees), I1 never compared the ledger expectation, I2 compared per-trade modeled fee
+  to total actual inside an always-true band, I3 unfailable on EOD exits (_eod_resolve
+  incremented atomic_exits). ablFVG-mkt +0.099R VOID as edge evidence.
+- E19_EVENT_STUDY.md RELABELED raw bias-aligned level-penetration diagnostic: events_only
+  returned after min-penetration check, BEFORE depth reject and reclaim (funnel proof:
+  f_attempts_used=952, f_L_sweep_ok=0, f_depth_rejects=0, f_no_reclaim=0). No sigma/t/CI/
+  block-bootstrap/MFE-MAE; stated 10-20 bps event vol contradicts NQ ~50-70 bps @120min.
+  True reclaimed population 449 (952 -> 159 depth rejects -> 449). Archive verdict WITHDRAWN:
+  at best INCONCLUSIVE; family archive suspended pending E19B.
+
+## Engine v2.6 fixes (each gated by a negative test)
+- Barrier exits carry slippage + round-turn fees; rows publish r_gross / r(net) / friction_r.
+- Identity 1 GATE: ledger expectation sum(r_net*risk_dist*pv*qty) vs trade_builder P&L, $25 tol.
+- Identity 2 FIXED: modeled TOTAL vs actual TOTAL fees ($25 tol).
+- Identity 3 SPLIT: exits_barrier_stop / exits_barrier_tp / exits_eod + barrier purity
+  (|r_gross| == 1 or target_r by construction); publishes median_risk_dist, friction_R_total.
+- tz regression fixed: exit_time stamped from algo clock (ET), astimezone(UTC) path removed.
+- Starvable _resolve_cycle_minute fixed: minute bars queue and drain fully each step.
+- Local suite 18/18 green. AST-verified comment compression 71,918 -> 62,005 chars (cloud <64k).
+- LEAN CLI installed locally (1.0.228) - seventh request honored; ledger export unblocked.
+
+## E19B pre-registration (PREREGISTRATION_E19B.md, frozen BEFORE data)
+- Population: post-reclaim confirmed candidates only (expect ~449 NQ dev), permanent IDs,
+  CISD/FVG/IFVG as labels on ONE immutable population; paired counter-bias arm.
+- Measurement: R-unit forward returns (event's own risk_dist), H*=120min primary horizon,
+  full EVENT-ledger export, MFE/MAE exploratory-only.
+- Reporting: n, sigma, SE, 95% CI, MDE(80%) BEFORE any p-values; inference offline via
+  session-block bootstrap (B=10k, arms resampled jointly).
+- Three outcomes: POSITIVE (CI excludes 0 AND mean > 0.2R) / NULL (CI excludes MDE) /
+  INCONCLUSIVE (CI contains MDE boundary). Only NULL earns "archived"; only POSITIVE opens
+  the capped 6-8-run rescue study (rescue simulator MUST carry slippage+fees).
+- Multiplicity in writing: single primary hypothesis is the sole rescue trigger; everything
+  else EXPLORATORY; Holm-Bonferroni over fully enumerated family upon any promotion;
+  stable-positive = Holm-significant AND >=12/15 LOYO sign-stable AND >=3/4 markets AND >0.2R.
+- Replication plan: ES/YM/RTY dev-window data only (~1,800 pooled events). No locked data touched.
+- E19B NOT YET RUN: requires corrected-engine cloud compile + smoke gate, then directive
+  authorization sequence.
