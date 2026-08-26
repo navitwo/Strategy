@@ -2710,10 +2710,6 @@
 {"inst": "YM", "h_min": 60, "ts": 1584355800, "side": "o", "bias_aligned": false, "arm": "counter", "mae_r": -0.0412, "ret_r": 5.986268, "mfe_r": 6.9691, "shadow_mask": 2.0, "risk_dist": 145.4997}
 {"inst": "YM", "h_min": 120, "ts": 1584359400, "side": "o", "bias_aligned": false, "arm": "counter", "mae_r": -0.0412, "ret_r": 6.357403, "mfe_r": 8.9966, "shadow_mask": 2.0, "risk_dist": 145.4997}
 {"inst": "YM", "h_min": 240, "ts": 1584366600, "side": "o", "bias_aligned": false, "arm": "counter", "mae_r": -0.0412, "ret_r": 4.109975, "mfe_r": 8.9966, "shadow_mask": 2.0, "risk_dist": 145.4997}
-{"inst": "YM", "h_min": 30, "ts": 1584440100, "side": "o", "bias_aligned": false, "arm": "counter", "mae_r": -14.3133, "ret_r": 5.218397, "mfe_r": 25.0483, "shadow_mask": 3.0, "risk_dist": 13.4141}
-{"inst": "YM", "h_min": 60, "ts": 1584441900, "side": "o", "bias_aligned": false, "arm": "counter", "mae_r": -14.3133, "ret_r": 16.32613, "mfe_r": 25.0483, "shadow_mask": 3.0, "risk_dist": 13.4141}
-{"inst": "YM", "h_min": 120, "ts": 1584445500, "side": "o", "bias_aligned": false, "arm": "counter", "mae_r": -14.3133, "ret_r": 46.89103, "mfe_r": 54.0477, "shadow_mask": 3.0, "risk_dist": 13.4141}
-{"inst": "YM", "h_min": 240, "ts": 1584452700, "side": "o", "bias_aligned": false, "arm": "counter", "mae_r": -14.3133, "ret_r": 58.81879, "mfe_r": 98.1059, "shadow_mask": 3.0, "risk_dist": 13.4141}
 {"inst": "YM", "h_min": 30, "ts": 1585044600, "side": "a", "bias_aligned": true, "arm": "primary", "mae_r": -0.4442, "ret_r": 0.011538, "mfe_r": 0.7385, "shadow_mask": 3.0, "risk_dist": 173.3336}
 {"inst": "YM", "h_min": 60, "ts": 1585046400, "side": "a", "bias_aligned": true, "arm": "primary", "mae_r": -1.6558, "ret_r": -1.049999, "mfe_r": 0.7385, "shadow_mask": 3.0, "risk_dist": 173.3336}
 {"inst": "YM", "h_min": 120, "ts": 1585050000, "side": "a", "bias_aligned": true, "arm": "primary", "mae_r": -1.7423, "ret_r": -1.696152, "mfe_r": 0.7385, "shadow_mask": 3.0, "risk_dist": 173.3336}
