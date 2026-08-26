@@ -1352,16 +1352,16 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     | int(bool(e.get("shadow_ifvg"))) << 2)
             if cname not in local:
                 ch = Chart(cname)
+                ch.add_series(Series("fta-a",
+                                     SeriesType.SCATTER))
+                ch.add_series(Series("ftb-a",
+                                     SeriesType.SCATTER))
                 pres = ("", "rd-", "mfe-", "mae-", "mask-")
                 for pre in pres:
                     ch.add_series(Series(pre + "a",
                                          SeriesType.SCATTER))
                     ch.add_series(Series(pre + "o",
                                          SeriesType.SCATTER))
-                ch.add_series(Series("fta-a",
-                                     SeriesType.SCATTER))
-                ch.add_series(Series("ftb-a",
-                                     SeriesType.SCATTER))
                 local[cname] = ch
             vals = {"": e["ret_r"], "rd-": e["risk_dist"],
                     "mfe-": e["mfe_r"], "mae-": e["mae_r"],
@@ -1500,3 +1500,5 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             else:
                 cur = 0
         return best
+
+# ft-build-bump v2.9.1

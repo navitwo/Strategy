@@ -1,0 +1,9 @@
+NQ submitted 153f5ef47b4f5c67f8ae9707ee81a065
+NQ Completed. | att: 2937 | ev: 4084 | os: None
+ES submitted ae0c1be72d2e8a005d91f2a65a877fdd
+ES Completed. | att: 2783 | ev: 2036 | os: None
+YM submitted 26a8931f8b0333e477088409eb86d1ea
+YM Completed. | att: 2714 | ev: 4176 | os: None
+RTY submitted f661716537a26c4c33d6680c5a39ad88
+RTY Completed. | att: 1474 | ev: 1708 | os: None
+ALL MARKETS DONE
