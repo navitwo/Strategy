@@ -8,6 +8,7 @@ from qc_api import (backtest_create, backtest_list, chart_read,
                     poll_backtest)
 
 PID = 35506697
+REV = "FT32B"
 TARGETS = (0.5, 1.0, 1.5, 2.0)
 STOPS = (0.5, 1.0, 1.5, 2.0)
 CELLS = [(f"T{target:g}S{stop:g}", target, stop)
@@ -95,7 +96,7 @@ def write_jsonl_atomic(path, rows):
 
 def main():
     compile_id = open("compile_id.txt").read().strip()
-    tags = {f"E19BR-FT32-{inst}" for inst in ("NQ", "ES", "YM", "RTY")}
+    tags = {f"E19BR-{REV}-{inst}" for inst in ("NQ", "ES", "YM", "RTY")}
     existing = {row["name"] for row in backtest_list(PID)}
     duplicates = sorted(tags & existing)
     assert not duplicates, f"duplicate remote experiments: {duplicates}"
@@ -111,7 +112,7 @@ def main():
                       "variant": "events_only",
                       "min_stop_ticks": str(min_ticks),
                       "floor_atr_frac": "0.10"}
-            tag = f"E19BR-FT32-{inst}"
+            tag = f"E19BR-{REV}-{inst}"
             r = backtest_create(PID, tag, params, compile_id=compile_id)
             print(inst, "submitted", r["backtest_id"], flush=True)
             res = poll_backtest(PID, r["backtest_id"],

@@ -248,3 +248,15 @@ per-unit-risked reporting, and permanent monotonicity/non-empty-ledger tests.
 No strategy backtests or optimization are authorized. Validation and holdout
 remain locked, and Campaign 2 hypothesis selection remains blocked pending a
 valid replacement screen.
+
+### FT32-A export attempt — INVALID IMPLEMENTATION DIAGNOSTIC
+
+The first post-retraction retrieval attempt, `E19BR-FT32-NQ`
+(`730e86378e9ad231ec5487df2726b641`), completed as an `events_only`
+development export with `d_ev_results=4084` and declared `n_ft_rows=388`, but
+the `E19B-FT` chart returned zero series/rows. The driver therefore failed
+closed before writing a ledger or screen. Root cause: the dedicated FT chart
+was registered after the four horizon charts and was the fifth custom chart;
+the hosted chart cap dropped it. A permanent regression now simulates the
+four-chart cap and requires `E19B-FT` to be registered first. This attempt is
+not evidence and is not one of the four required valid market exports.
