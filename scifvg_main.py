@@ -23,6 +23,10 @@ class TickSlippage:
     def get_slippage_approximation(self, asset, order):
         return float(asset.symbol_properties.minimum_price_variation) * self.ticks
 
+FT_CELLS = [(f"T{t:g}S{s:g}", t, s)
+            for t in (0.5, 1, 1.5, 2)
+            for s in (0.5, 1, 1.5, 2)]
+
 INSTRUMENT_SPECS = {
     "NQ":  (Futures.Indices.NASDAQ_100_E_MINI,       0.25, 20.0),
     "MNQ": (Futures.Indices.MICRO_NASDAQ_100_E_MINI, 0.25,  2.0),
@@ -254,15 +258,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._ledger_exp_usd += usd_net_e
         self._fees_modeled_total += fee_rt_e
         self.trade_economics.append({
-            "cycle_id": cid,
-            "candidate": str(self.cfg.get("variant")),
-            "side": side,
-            "entry_px": round(self.entry_avg, 2),
+            "cycle_id": cid, "candidate": str(self.cfg.get("variant")),
+            "side": side, "entry_px": round(self.entry_avg, 2),
             "entry_time": getattr(self, "_cyc_entry_ts", None),
             "exit_px": round(exit_px, 2), "exit_time": str(et),
             "exit_kind": "eod",
             "r": round(r_contrib, 4),
-            "friction_r": round(-fee_rt_e / (self.risk_dist * pv_qty_e), 4),
+            "friction_r": (round(-fee_rt_e /
+                                 (self.risk_dist * pv_qty_e), 4)),
             "risk_dist": round(self.risk_dist, 4),
             "qty": self.pos_qty,
             "mfe_r": round(getattr(self, "_cyc_mfe", 0.0) / self.risk_dist, 4),
@@ -560,7 +563,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         "idx0": self._abs_now,
                         "remaining": set(self.cfg.get(
                             "event_horizons", [120])),
-                        "mfe_r": 0.0, "mae_r": 0.0,
+                        "mfe_r": 0.0, "mae_r": 0.0, "ft": {},
                         **self._shadow_labels(s, b)})
                     self.setup = None
                     return
@@ -937,6 +940,15 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                    else (ev["px"] - agg["high"]))
             ev["mfe_r"] = max(ev["mfe_r"], float(fav) / rd)
             ev["mae_r"] = min(ev["mae_r"], float(adv) / rd)
+            ftg = ev["ft"]
+            for k, t, s_lev in FT_CELLS:
+                if k in ftg:
+                    continue
+                m_, n_ = ev["mfe_r"], ev["mae_r"]
+                hit_t, hit_s = m_ >= t, n_ <= -s_lev
+                if hit_t or hit_s:
+                    ftg[k] = (99 if hit_t and hit_s
+                              else t if hit_t else -s_lev)
             for h in list(ev["remaining"]):
                 if self._elapsed_min(ev, agg) >= h:
                     ret_r = ((agg["close"] - ev["px"]) / rd) * ev["side"]
@@ -954,7 +966,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         "shadow_mask": int(bool(ev.get("shadow_cisd")))
                         | int(bool(ev.get("shadow_fvg"))) << 1
                         | int(bool(ev.get("shadow_ifvg"))) << 2,
-                        "censored": False,
+                        "ft": dict(ev.get("ft", {})),
                         "mfe_r": round(ev["mfe_r"], 4),
                         "mae_r": round(ev["mae_r"], 4),
                         **{k: ev.get(k) for k in
@@ -1154,8 +1166,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         row = {
             "cycle_id": cid,
             "candidate": str(self.cfg.get("variant", "candidate")),
-            "side": side,
-            "entry_px": round(self.entry_avg, 2),
+            "side": side, "entry_px": round(self.entry_avg, 2),
             "entry_time": getattr(self, "_cyc_entry_ts", None),
             "exit_px": round(fill_px, 2),
             "barrier_px": round(px, 2),
@@ -1341,14 +1352,27 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     | int(bool(e.get("shadow_ifvg"))) << 2)
             if cname not in local:
                 ch = Chart(cname)
-                for sfx in ("a", "o"):
-                    for pre in ("", "rd-", "mfe-", "mae-", "mask-"):
-                        ch.add_series(Series(pre + sfx,
-                                             SeriesType.SCATTER))
+                pres = ("", "rd-", "mfe-", "mae-", "mask-")
+                for pre in pres:
+                    ch.add_series(Series(pre + "a",
+                                         SeriesType.SCATTER))
+                    ch.add_series(Series(pre + "o",
+                                         SeriesType.SCATTER))
+                ch.add_series(Series("fta-a",
+                                     SeriesType.SCATTER))
+                ch.add_series(Series("ftb-a",
+                                     SeriesType.SCATTER))
                 local[cname] = ch
             vals = {"": e["ret_r"], "rd-": e["risk_dist"],
                     "mfe-": e["mfe_r"], "mae-": e["mae_r"],
                     "mask-": float(mask)}
+            if (sname == "a" and e["h_min"] == 120
+                    and e.get("ft")):
+                tb = sb = 0
+                for i2, v2 in enumerate(e["ft"].values()):
+                    tb |= (1 << i2) if v2 >= 0 else 0
+                    sb |= (1 << i2) if v2 <= 0 else 0
+                vals["fta-"], vals["ftb-"] = float(tb), float(sb)
             for pre, v in vals.items():
                 sr = local[cname].series[pre + sname]
                 sr.add_point(ts_dt, float(v))
@@ -1373,26 +1397,18 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         gross_w = sum(r for r in rs if r > 0)
         gross_l = -sum(r for r in rs if r <= 0)
         pf = (gross_w / gross_l) if gross_l > 0 else (999.0 if gross_w > 0 else 0.0)
-        self.Debug(json.dumps({
-            "exp_hash": self.exp_hash, "cfg": self.cfg,
+        self.Debug(json.dumps({"exp_hash": self.exp_hash,
             "trades": len(rs), "wins": wins, "losses": losses,
-            "win_rate": round(wins / len(rs), 4) if rs else 0.0,
-            "avg_r": round(avg_r, 4), "pf_local_r": round(pf, 4),
-            "max_consec_losses": self._max_consec_losses(rs),
-            "open_at_end": held,
+            "avg_r": round(avg_r, 4), "open_at_end": held,
         }, sort_keys=True))
         try:
             RT = self.RuntimeStatistics
             RT["funnel_sessions"] = str(self.fun["sessions"])
             RT["funnel_L_entries"] = str(self.fun["L_fills"])
             RT["funnel_S_entries"] = str(self.fun["S_fills"])
-            RT["local_trades"] = str(len(rs))
             RT["exp_hash"] = self.exp_hash
             for k in sorted(self.fun.keys()):
                 RT[f"f_{k}"] = str(self.fun[k])
-            RT["d_h4_published"] = str(len(self.h4_pub))
-            RT["d_swing_hi"] = str(len(self.swing_hi))
-            RT["d_swing_lo"] = str(len(self.swing_lo))
             RT["r_trades"] = str(len(rs))
             RT["r_wins"] = str(wins)
             RT["r_avg"] = repr(round(avg_r, 4))
@@ -1441,10 +1457,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                            ("d_ev_results", len(self._ev_results)),
                 ("n_event_rows", len(self._ev_results)),
                            ("d_open_at_end", held),
-                           ("d_race_rows", sum(1 for t in
-                            self.trade_economics if t.get("is_race"))),
                            ("d_pos_side_end", self.pos_side),
-                           ("d_exit_acc_end", self.exit_qty_acc),
                            ("d_n_fillevents", getattr(
                                self, "_n_fill_events", 0))):
                 self.RuntimeStatistics[k5] = str(v5)
