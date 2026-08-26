@@ -23,7 +23,6 @@ class TickSlippage:
     def get_slippage_approximation(self, asset, order):
         return float(asset.symbol_properties.minimum_price_variation) * self.ticks
 
-# see conformance doc
 INSTRUMENT_SPECS = {
     "NQ":  (Futures.Indices.NASDAQ_100_E_MINI,       0.25, 20.0),
     "MNQ": (Futures.Indices.MICRO_NASDAQ_100_E_MINI, 0.25,  2.0),
@@ -57,7 +56,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                   "commission_per_side", "window_start_et", "window_end_et",
                   "invert_on_cisd_bar", "entry_location",
                   "pivot_lookback", "pivot_right", "max_attempts_per_day",
-                  "stop_mode", "entry_mode", "random_entry_prob", "variant"):
+                  "stop_mode", "entry_mode", "random_entry_prob", "variant",
+                  "event_horizons", "depth_min_bps", "depth_max_bps",
+                  "stop_buffer_bps", "counter_bias_arm"):
             v = self.get_parameter(p)
             if v is not None and str(v).strip() != "":
                 raw[p] = v
@@ -97,7 +98,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._ev_results = []
         self.charts = {}
         self.cfg = cfg
-        self.is_nq = str(cfg["instrument"]).upper() == "NQ"
 
         overall_start = datetime.strptime(str(cfg["start_date"]), "%Y-%m-%d").date()
         overall_end = datetime.strptime(str(cfg["end_date"]), "%Y-%m-%d").date()
@@ -122,6 +122,12 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if inst not in INSTRUMENT_SPECS:
             raise RuntimeError(f"bad instrument {inst!r}")
         root, tick_sz, pv = INSTRUMENT_SPECS[inst]
+        ref_bps = {"NQ": 0.7, "MNQ": 0.7, "ES": 0.5, "YM": 2.2, "RTY": 0.6}
+        ab = ref_bps.get(inst, 0.7)
+        for k, mult in (("depth_min_bps", 1.0), ("depth_max_bps", 24.0),
+                        ("stop_buffer_bps", 1.0)):
+            if not cfg.get(k):
+                cfg[k] = round(ab * mult, 3)
         self.fut = self.add_future(
             root, Resolution.MINUTE, extended_market_hours=True,
             data_mapping_mode=DataMappingMode.OPEN_INTEREST,
@@ -189,11 +195,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._race_eq_open = None
         self._flatten_tickets = []
         self._row_written = False
-        self.unfilled_watch = []
-        self.unfilled_resolved_n = 0
         self.d_bars5_total = 0
         self.tzcheck_ok = 0
         self.qty_max_seen = 0
+
+        self._starting_tpv = None
+        self.Debug(f"SCIFVG init {cfg['instrument']} trade {start}..{end} "
+                   f"warmup_from={ws.isoformat()} win={cfg['window_start_et']}-"
+                   f"{cfg['window_end_et']} hash={self.exp_hash}")
 
     def _equity(self):
         try:
@@ -201,10 +210,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         except Exception:
             return 0.0
 
-        self._starting_tpv = None
-        self.Debug(f"SCIFVG init {cfg['instrument']} trade {start}..{end} "
-                   f"warmup_from={ws.isoformat()} win={cfg['window_start_et']}-"
-                   f"{cfg['window_end_et']} hash={self.exp_hash}")
 
     def _et_minutes(self, et):
         return et.hour * 60 + et.minute
@@ -244,8 +249,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         pv_qty_e = self.point_value * qty_e
         fee_rt_e = 2.0 * float(self.cfg["commission_per_side"]) * qty_e
         usd_net_e = r_contrib * self.risk_dist * pv_qty_e - fee_rt_e
-        self._ledger_exp_usd = getattr(self, "_ledger_exp_usd", 0.0) + usd_net_e
-        self._fees_modeled_total = getattr(self, "_fees_modeled_total", 0.0) + fee_rt_e
+        self._ledger_exp_usd += usd_net_e
+        self._fees_modeled_total += fee_rt_e
         self.trade_economics.append({
             "cycle_id": cid,
             "candidate": str(self.cfg.get("variant")),
@@ -790,10 +795,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 continue
             self._minq = []
 
-    def _ny_tz(self):
-        import pytz
-        return pytz.timezone("America/New_York")
-
     def _on_5m_consolidated(self, consolidated):
         """One call per 5m slot; ET-native."""
         et = consolidated.end_time
@@ -889,7 +890,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     else (bb["close"] > bb["open"]):
                 ref_open = bb
                 break
-        # see conformance doc
         fvg = None
         for j in range(max(0, n - 2 - int(
                 self.cfg.get("fvg_max_age_bars", 60))), n - 2):
@@ -1025,7 +1025,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         self.exit_qty_acc = 0
                 return
             if purpose is None:
-                # [see PROTOCOL_CONFORMANCE.md]
                 self._inc("late_fill_events")
                 self.pos_side = 0
                 self.pos_qty = 0
@@ -1126,8 +1125,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         usd_net = r_fill * self.risk_dist * pv_qty - fee_rt
         r_contrib = usd_net / (self.risk_dist * pv_qty)
         cid = f"{self.exp_hash}-{self._cycle_seq}"
-        self._ledger_exp_usd = getattr(self, "_ledger_exp_usd", 0.0) + usd_net
-        self._fees_modeled_total = getattr(self, "_fees_modeled_total", 0.0) + fee_rt
+        self._ledger_exp_usd += usd_net
+        self._fees_modeled_total += fee_rt
         row = {
             "cycle_id": cid,
             "candidate": str(self.cfg.get("variant", "candidate")),
@@ -1165,8 +1164,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.tp_ticket = None
         self.setup = None
 
-    def _record_metrics_exit(self, kind):
-        pass
 
     def _cancel_ticket(self, t):
         if t is None:
@@ -1189,10 +1186,19 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             held = self.portfolio[self.fut.mapped].quantity
             if held:
                 _m = getattr(self, "_last_min_close", None)
-                _m = getattr(self, "_last_min_close", None)
-                _px = self._rt((_m or held) + 20 * self.tick if held < 0 else (_m or held) - 20 * self.tick, up=(held < 0))
-                tk = self.limit_order(self.fut.mapped, -held, _px, tag=f"FC-{reason}")
-                self._register_flatten_order(tk, held)
+                _ref = _m if isinstance(_m, (int, float)) and _m > 0 else \
+                    getattr(self, "entry_avg", None)
+                if not (_ref and _ref > 0):
+                    _ref = getattr(self, "stop_px", None)
+                if _ref and _ref > 0:
+                    _px = self._rt(
+                        _ref + 20 * self.tick if held < 0
+                        else _ref - 20 * self.tick, up=(held < 0))
+                    tk = self.limit_order(self.fut.mapped, -held, _px,
+                                          tag=f"FC-{reason}")
+                    self._register_flatten_order(tk, held)
+                else:
+                    self._inc("flatten_no_reference")
         except Exception:
             pass
         self._cancel_ticket(self.stop_ticket)

@@ -23,3 +23,7 @@ desktop.ini
 # LEAN CLI local data cache
 /data/
 lean.json
+
+# LEAN CLI local data library (per-market scaffold; not research artifacts)
+data/
+lean.json
