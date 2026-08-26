@@ -122,12 +122,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         if inst not in INSTRUMENT_SPECS:
             raise RuntimeError(f"bad instrument {inst!r}")
         root, tick_sz, pv = INSTRUMENT_SPECS[inst]
-        ref_bps = {"NQ": 0.7, "MNQ": 0.7, "ES": 0.5, "YM": 2.2, "RTY": 0.6}
-        ab = ref_bps.get(inst, 0.7)
-        for k, mult in (("depth_min_bps", 1.0), ("depth_max_bps", 24.0),
-                        ("stop_buffer_bps", 1.0)):
-            if not cfg.get(k):
-                cfg[k] = round(ab * mult, 3)
+        ab = {"NQ": 0.7, "ES": 0.5, "YM": 2.2, "RTY": 0.6}.get(inst, 0.7)
+        for k, m_ in (("depth_min_bps", 1), ("depth_max_bps", 24),
+                      ("stop_buffer_bps", 1)):
+            cfg[k] = cfg.get(k) or round(ab * m_, 3)
         self.fut = self.add_future(
             root, Resolution.MINUTE, extended_market_hours=True,
             data_mapping_mode=DataMappingMode.OPEN_INTEREST,
@@ -241,14 +239,15 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return "L" if side > 0 else "S"
 
     def _eod_resolve(self, et, cid):
-        """Close open cycle at last mark."""
+        """Close open cycle at last mark; r is net (fees deducted)."""
         side = self.pos_side
         exit_px = getattr(self, "_last_min_close", None) or self.entry_avg
-        r_contrib = ((exit_px - self.entry_avg) / self.risk_dist) * side
+        r_gross_e = ((exit_px - self.entry_avg) / self.risk_dist) * side
         qty_e = max(int(self.pos_qty), 1)
         pv_qty_e = self.point_value * qty_e
         fee_rt_e = 2.0 * float(self.cfg["commission_per_side"]) * qty_e
-        usd_net_e = r_contrib * self.risk_dist * pv_qty_e - fee_rt_e
+        usd_net_e = r_gross_e * self.risk_dist * pv_qty_e - fee_rt_e
+        r_contrib = usd_net_e / (self.risk_dist * pv_qty_e)
         self._ledger_exp_usd += usd_net_e
         self._fees_modeled_total += fee_rt_e
         self.trade_economics.append({
@@ -1186,10 +1185,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             held = self.portfolio[self.fut.mapped].quantity
             if held:
                 _m = getattr(self, "_last_min_close", None)
-                _ref = _m if isinstance(_m, (int, float)) and _m > 0 else \
-                    getattr(self, "entry_avg", None)
+                _ref = _m if isinstance(_m, (int, float)) and _m > 0 \
+                    else self.entry_avg
                 if not (_ref and _ref > 0):
-                    _ref = getattr(self, "stop_px", None)
+                    _ref = self.stop_px
                 if _ref and _ref > 0:
                     _px = self._rt(
                         _ref + 20 * self.tick if held < 0
