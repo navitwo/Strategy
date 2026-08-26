@@ -6,7 +6,7 @@ import json
 import math
 
 class ScifvgFeeModel(FeeModel):
-    """Flat commission per side per contract (U."""
+    """Flat commission per side per contract."""
     def __init__(self, per_side):
         self.per_side = float(per_side)
         super().__init__()
@@ -16,7 +16,7 @@ class ScifvgFeeModel(FeeModel):
         return OrderFee(CashAmount(fee, "USD"))
 
 class TickSlippage:
-    """Fixed adverse slippage of N ticks per fi."""
+    """Fixed adverse slippage of N ticks per."""
     def __init__(self, ticks):
         self.ticks = ticks
 
@@ -242,7 +242,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return "L" if side > 0 else "S"
 
     def _eod_resolve(self, et, cid):
-        """Close open cycle at last mark; r is net."""
+        
         side = self.pos_side
         exit_px = getattr(self, "_last_min_close", None) or self.entry_avg
         r_gross_e = ((exit_px - self.entry_avg) / self.risk_dist) * side
@@ -426,7 +426,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.h4_bucket["tN"] = b5["et"]
 
     def _scan_fvgs(self, upto_idx, side):
-        """3-candle opposing FVGs."""
+        
         out = []
         lo = max(2, upto_idx - self.cfg["fvg_max_age_bars"])
         m = self.cfg["fvg_min_ticks"] * self.tick
@@ -458,7 +458,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 and self.pdh is not None and self.pdl is not None)
 
     def _depth_thresholds(self, ref_px):
-        """Depth thresholds; bps overrides ticks."""
+        
         c = self.cfg
         px = max(float(ref_px), 1e-9)
         bmin = float(c.get("depth_min_bps", 0.0) or 0.0)
@@ -476,7 +476,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return float(self.cfg.get("stop_buffer_ticks", 4)) * self.tick
 
     def _try_arm_attempt(self, b, idx, et, skey):
-        """Arm sweeps; both sides if events_only."""
+        
         events_only = (str(self.cfg.get("variant")) == "events_only")
         max_att = self.cfg.get("max_attempts_per_day", 1)
         for side, level in ((1, self.pdl), (-1, self.pdh)):
@@ -504,8 +504,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 "ref_open": None, "ref_idx": None,
                 "cisd_deadline": None, "fvg": None, "inv_deadline": None,
                 "cisd_idx": None, "retest_deadline": None,
-                "entry_id": None, "bias_aligned": (self.bias == side),
-                "arm_et": str(et)}
+                "entry_id": None, "bias_aligned": (self.bias == side)}
             return
 
     def _advance_setup(self, b, idx, et, skey):
@@ -535,10 +534,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if closed_back:
                 self._inc(f"{K}_sweep_ok")
                 if str(self.cfg.get("variant")) == "events_only":
-                    stop = ((s["extreme"]
-                             - self._stop_buffer(b["close"])) if side > 0
-                            else (s["extreme"]
-                                  + self._stop_buffer(b["close"])))
+                    buf = self._stop_buffer(b["close"])
+                    stop = (s["extreme"] - buf) if side > 0 \
+                        else (s["extreme"] + buf)
                     dist = abs(b["close"] - stop)
                     floor = max(float(self.cfg.get("min_stop_ticks", 0))
                                 * self.tick,
@@ -551,10 +549,11 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     self._ev_seq = getattr(self, "_ev_seq", 0) + 1
                     self._ev_candidates.append({
                         "event_id": f"{self.exp_hash}-{self._ev_seq:06d}",
-                        "bias_aligned": bool(s.get(
-                            "bias_aligned", self.bias == side)),
+                        "bias_aligned": bool(s.get("bias_aligned",
+                                                   self.bias == side)),
                         "side": side,
-                        "date": str(getattr(et, "date", lambda: et)()),
+                        "date": str(getattr(et, "date",
+                                            lambda: et)()),
                         "ts0": _now_ts,
                         "px": float(b["close"]),
                         "stop_px": float(stop), "risk_dist": float(dist),
@@ -807,7 +806,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self._minq = []
 
     def _on_5m_consolidated(self, consolidated):
-        """One call per 5m slot; ET-native."""
+        
         et = consolidated.end_time
         if getattr(self, "_starting_tpv", None) is None:
             try:
@@ -890,14 +889,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self._cancel_pending(f"{K}_cancel_window")
 
     def _elapsed_min(self, ev, agg):
-        """Minutes since reclaim confirmation (wall."""
+        
         try:
             return (agg["ts"] - ev["ts0"]) / 60.0
         except Exception:
             return (self._abs_now - ev["idx0"]) * 5.0
 
     def _shadow_labels(self, s, b):
-        
+
         side = s["side"]
         bars = self.bars5
         n = len(bars)
@@ -926,7 +925,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 "shadow_ifvg": ifvg}
 
     def _advance_events(self, agg):
-        """Resolve candidates (wall-clock)."""
+        
         if not self._ev_candidates:
             return
         still = []
@@ -952,10 +951,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         "entry_px": round(ev["px"], 2),
                         "stop_px": round(ev["stop_px"], 2),
                         "risk_dist": round(ev["risk_dist"], 4),
-                        "shadow_mask": (int(bool(
-                            ev.get("shadow_cisd")))
-                            | int(bool(ev.get("shadow_fvg"))) << 1
-                            | int(bool(ev.get("shadow_ifvg"))) << 2),
+                        "shadow_mask": int(bool(ev.get("shadow_cisd")))
+                        | int(bool(ev.get("shadow_fvg"))) << 1
+                        | int(bool(ev.get("shadow_ifvg"))) << 2,
                         "censored": False,
                         "mfe_r": round(ev["mfe_r"], 4),
                         "mae_r": round(ev["mae_r"], 4),
@@ -1110,7 +1108,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             elif purpose and purpose[0] in ("stop", "tp"):
                 self.order_purpose.pop(oid, None)
     def _drain_minq(self):
-        """Drain minute queue vs open cycle."""
+        
         if self.pos_side == 0:
             self._minq = []
             return
@@ -1120,7 +1118,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                                        self.time)
 
     def _resolve_cycle_minute(self, o, h, l, c, bar_end_et):
-        """Cycle resolve."""
+        
         side = self.pos_side
         if side == 0 or self.risk_dist is None or self.entry_avg is None:
             return
@@ -1201,7 +1199,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             pass
 
     def _register_flatten_order(self, ticket, held_qty):
-        """Track flatten fill."""
+        
         if ticket is None:
             return
         self.order_purpose[ticket.order_id] = ("flatten", 1 if held_qty < 0 else -1)
@@ -1240,7 +1238,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._inc("forced_flattens")
 
     def _reconcile_pnl(self):
-        """Hard gate identities (see conformance do."""
+        
         out = {"ok": False}
         try:
             tb_trades = list(self.trade_builder.closed_trades)
@@ -1329,7 +1327,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return out
 
     def _export_charts(self):
-        """Build charts locally; register once at e."""
+        
         local = {}
         for e in getattr(self, "_ev_results", []):
             cname = f"E19B-h{e['h_min']}"
@@ -1338,7 +1336,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 ts_dt = datetime.fromisoformat(e["last_reclaim_et"])
             except Exception:
                 continue
-            ts = ts_dt
             mask = (int(bool(e.get("shadow_cisd")))
                     | int(bool(e.get("shadow_fvg"))) << 1
                     | int(bool(e.get("shadow_ifvg"))) << 2)

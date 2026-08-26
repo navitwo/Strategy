@@ -82,9 +82,10 @@ check("A6 elapsed-minutes resolver",
       "dt_bars >= h // 5" not in code_only)
 
 # (7) ObjectStore ledger export
-check("A7 object_store export", "_export_ledgers" in code_only and
-      "object_store.save_bytes" in code_only and
-      'self.Debug("TRADE "' not in code_only)
+check("A7 chart-channel ledger export (ObjectStore license-blocked)",
+      "_export_charts" in code_only and
+      "add_chart" in code_only and
+      '"mask-' in code_only and 'self.Debug("TRADE "' not in code_only)
 
 # (8) shadow labels attached to candidates
 check("A8 shadow CISD/FVG/IFVG labels",
