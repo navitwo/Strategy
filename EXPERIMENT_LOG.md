@@ -152,3 +152,64 @@ Directive adopted in prescribed order. No optimization started; validation/holdo
 - Replication plan: ES/YM/RTY dev-window data only (~1,800 pooled events). No locked data touched.
 - E19B NOT YET RUN: requires corrected-engine cloud compile + smoke gate, then directive
   authorization sequence.
+
+
+---
+
+## E19B — UNFLOORED EVENT STUDY (closed 2026-08-25, tag e19b-provisional @ 7de3be0)
+
+- Preflight (one commit): two-sided arming (bias_aligned tag isolates HTF gate),
+  shared event_id per reclaim, real ES/YM/RTY spec table, bps threshold
+  normalization, excursion-cumulative depth kill, wall-clock horizons,
+  chart-series ledger channel (ObjectStore export license-blocked), shadow
+  CISD/FVG/IFVG labels, fill-based economics, rollover pricing fix.
+- One-year NQ smoke: artifact completeness (288/288 rows via charts) +
+  deterministic replay equality.
+- Full run: 15,024 event-horizon rows; primary H*=120m raw mean −0.0091R,
+  iid CI [−0.2414,+0.2263] → INCONCLUSIVE. No rescue study opened.
+
+## E19B-R — FLOORED EVENT STUDY (closed 2026-08-25, tag e19b-r-final)
+
+- Preregistered population-conformance correction BEFORE rerun:
+  tradability floor risk_dist ≥ max(min ticks per instrument,
+  0.10×ATR14(5m)); θ and three-outcome rule unamended; frozen unfloored
+  primary retained alongside.
+- Offline replication gate passed pre-cloud (directive's own bootstrap
+  reproduced: raw INCONCLUSIVE / winsorized NULL on committed ledgers).
+- CRITICAL DEFECT FOUND MID-COURSE (commit e207dcc): floor params present in
+  defaults but MISSING from the raw parameter read list → cloud silently
+  used 0.0 and the floor never bound (2,516 violations detected). Fixed;
+  regression test `test_floor_params_in_read_list` added; all four markets
+  rerun on compile 3605cbb7 → 12,004 rows, 0 violations.
+- Result: floored H*=120m −0.0787R iid CI [−0.352,+0.219] INCONCLUSIVE;
+  winsorized ±5R −0.1145 [−0.278,+0.051] NULL; bias-gate control aligned
+  −0.079 vs rejected +0.121 (z=−1.16); MFE/MAE: 68.9% reach MAE ≤ −1R vs
+  45.8% reaching MFE ≥ +2R.
+
+## CAMPAIGN CLOSEOUT (documentation-only commit)
+
+- Outcome label: administratively closed campaign — INCONCLUSIVE raw
+  primary + NULL winsorized sensitivity; NOT a pre-registered primary NULL.
+- Four separated layers recorded in CAMPAIGN_CLOSEOUT.md: frozen primary /
+  floored primary / post-hoc robustness (winsorized+trimmed NULL at every
+  horizon; every market CI contains zero except ES-240m marginal) /
+  mechanism (exploratory).
+- Exactly one defect disclosed: published CIs were iid not session-clustered
+  (sessions=n=1121 printed while ledger holds 895 distinct session-dates;
+  SEs match σ/√1121 exactly). Correctly clustered CIs are reproducible from
+  committed ledgers and change no verdict (raw ≈[−0.374,+0.230]
+  INCONCLUSIVE; winsorized ≈[−0.298,+0.070] NULL). Reclaim timestamps are
+  recoverable (reclaim_ts = ts − h_min×60); only true gaps: missing
+  permanent event_id + this statistical error.
+- Five findings preserved: estimator-design lesson (raw mean of unbounded
+  ratio structurally unable to return NULL); MFE/MAE mechanism; bias-gate
+  selects worse half; 60m omitted from closeout-facing prose (present in
+  result tables; raw INC / wins NULL); floor composition shift (ES −45%/
+  RTY −18%/NQ −10%/YM 0%) making primaries non-identical populations, and
+  the ATR clause never bound (below tick floor everywhere).
+- Campaign 2: branch of THIS repo (durable asset = engine v2.8 + identity
+  gates + null infra + ledger channel + smoke gate + regression suite);
+  must screen bracket geometries offline against the 3,001-candidate H*
+  MFE/MAE ledger before hypothesis selection; fresh prereg with bounded
+  primary estimator, ex-ante normalizer, sessions<n assertion; optimization
+  prohibited absent a demonstrated robust edge.
