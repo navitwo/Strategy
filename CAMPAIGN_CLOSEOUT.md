@@ -19,8 +19,9 @@ amended:
 
 - Population: bias-aligned reclaim candidates pooled across NQ/ES/YM/RTY,
   2010-01→2024-12 dev segment only.
-- H\* = 120m, raw mean of forward R: **−0.0091R, iid 95% CI
-  [−0.2414, +0.2263] → INCONCLUSIVE** (n = 1,381 events).
+- H\* = 120m, raw mean of forward R: **−0.0091R, day-clustered 95% CI
+  [−0.2414, +0.2263] → INCONCLUSIVE** (n = 1,381 events; the true iid CI
+  is [−0.2236, +0.2054] — narrower, same verdict).
 - θ = 0.2R; three-outcome rule as pre-registered.
 
 ## Layer 2 — Floored primary (tag `e19b-r-final`)
@@ -117,13 +118,18 @@ clustered resampling and is unaffected by this defect.
    the closeout-facing prose summaries (commit messages, memory) of E19B-R;
    it IS present in both result tables. Its verdicts: raw INCONCLUSIVE
    ([−0.202, +0.210]), winsorized NULL ([−0.187, +0.126]).
-5. **Floor composition shift.** The floor removed ES −45%, RTY −18%,
-   NQ −10%, YM 0% of candidates, so Layers 1 and 2 are non-identical
-   populations and their INCONCLUSIVES are not independent confirmations.
-   Additionally, the declared 0.10 × ATR(14, 5m) condition never bound —
-   it sat below the tick floor in every market (only 12 RTY rows within 1%
-   of the tick floor, none within 1% elsewhere) — making the ATR clause
-   declarative rather than operative.
+5. **Floor composition shift.** The floor removed ES −40% (−42% all-arm),
+   RTY −34%, NQ −10% (−13% all-arm), YM ~0% of candidates (verified on both
+   the aligned and all-arm bases from the committed ledgers), so Layers 1
+   and 2 are non-identical populations and their INCONCLUSIVES are not
+   independent confirmations.
+   Additionally, there is no observed row where the ATR clause was the
+   operative constraint: min risk_dist equals the tick floor per market,
+   which proves the tick floor binds for at least one event per market but
+   not that the ATR clause never bound for any event; across the ledger it
+   sat below the tick floor in every market (only 12 RTY rows within 1% of
+   the floor, none elsewhere) — declarative rather than operative as far as
+   the data can show.
 
 ---
 
