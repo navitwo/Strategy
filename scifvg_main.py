@@ -1382,40 +1382,41 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             "open_at_end": held,
         }, sort_keys=True))
         try:
-            self.RuntimeStatistics["funnel_sessions"] = str(self.fun["sessions"])
-            self.RuntimeStatistics["funnel_L_entries"] = str(self.fun["L_fills"])
-            self.RuntimeStatistics["funnel_S_entries"] = str(self.fun["S_fills"])
-            self.RuntimeStatistics["local_trades"] = str(len(rs))
-            self.RuntimeStatistics["exp_hash"] = self.exp_hash
+            RT = self.RuntimeStatistics
+            RT["funnel_sessions"] = str(self.fun["sessions"])
+            RT["funnel_L_entries"] = str(self.fun["L_fills"])
+            RT["funnel_S_entries"] = str(self.fun["S_fills"])
+            RT["local_trades"] = str(len(rs))
+            RT["exp_hash"] = self.exp_hash
             for k in sorted(self.fun.keys()):
-                self.RuntimeStatistics[f"f_{k}"] = str(self.fun[k])
-            self.RuntimeStatistics["d_h4_published"] = str(len(self.h4_pub))
-            self.RuntimeStatistics["d_swing_hi"] = str(len(self.swing_hi))
-            self.RuntimeStatistics["d_swing_lo"] = str(len(self.swing_lo))
-            self.RuntimeStatistics["r_trades"] = str(len(rs))
-            self.RuntimeStatistics["r_wins"] = str(wins)
-            self.RuntimeStatistics["r_avg"] = repr(round(avg_r, 4))
-            self.RuntimeStatistics["r_pf"] = repr(round(pf, 4))
-            self.RuntimeStatistics["r_sum"] = repr(round(sum(rs), 3))
-            self.RuntimeStatistics["r_maxconsecL"] = str(self._max_consec_losses(rs))
+                RT[f"f_{k}"] = str(self.fun[k])
+            RT["d_h4_published"] = str(len(self.h4_pub))
+            RT["d_swing_hi"] = str(len(self.swing_hi))
+            RT["d_swing_lo"] = str(len(self.swing_lo))
+            RT["r_trades"] = str(len(rs))
+            RT["r_wins"] = str(wins)
+            RT["r_avg"] = repr(round(avg_r, 4))
+            RT["r_pf"] = repr(round(pf, 4))
+            RT["r_sum"] = repr(round(sum(rs), 3))
+            RT["r_maxconsecL"] = str(self._max_consec_losses(rs))
             lw = [r for r in rs if r > 0]
             ll = [r for r in rs if r <= 0]
-            self.RuntimeStatistics["r_avgwin"] = repr(round(sum(lw) / len(lw), 4)) if lw else "0"
-            self.RuntimeStatistics["r_avgloss"] = repr(round(sum(ll) / len(ll), 4)) if ll else "0"
-            self.RuntimeStatistics["rec_ok"] = "1" if rec["ok"] else "0"
+            RT["r_avgwin"] = repr(round(sum(lw) / len(lw), 4)) if lw else "0"
+            RT["r_avgloss"] = repr(round(sum(ll) / len(ll), 4)) if ll else "0"
+            RT["rec_ok"] = "1" if rec["ok"] else "0"
             for k2 in ("i1_exp_usd", "i1_profit", "i1_resid",
                        "ledger_exp_usd", "i1_ledger_resid",
                        "i1_cash_resid", "fees_modeled_total",
                        "exits_barrier_stop", "exits_barrier_tp",
                        "exits_eod", "barrier_purity_violations",
                        "median_risk_dist", "friction_R_total"):
-                self.RuntimeStatistics[f"rec_{k2}"] = repr(rec.get(k2))
+                RT[f"rec_{k2}"] = repr(rec.get(k2))
             for k4 in ("eod_flattens", "rollovers"):
-                self.RuntimeStatistics[k4] = str(self.fun.get(k4, 0))
-            self.RuntimeStatistics["d_bars5_total"] = str(self.d_bars5_total)
+                RT[k4] = str(self.fun.get(k4, 0))
+            RT["d_bars5_total"] = str(self.d_bars5_total)
             try:
                 _s = int(self.fun["sessions"])
-                self.RuntimeStatistics["bars_per_session"] = \
+                RT["bars_per_session"] = \
                     repr(round(self.d_bars5_total / _s, 1)) if _s else "0"
             except Exception:
                 self.RuntimeStatistics["bars_per_session"] = "0"
