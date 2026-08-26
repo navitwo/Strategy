@@ -6,7 +6,6 @@ import json
 import math
 
 class ScifvgFeeModel(FeeModel):
-    """Flat commission per side per contract."""
     def __init__(self, per_side):
         self.per_side = float(per_side)
         super().__init__()
@@ -16,16 +15,14 @@ class ScifvgFeeModel(FeeModel):
         return OrderFee(CashAmount(fee, "USD"))
 
 class TickSlippage:
-    """Fixed adverse slippage of N ticks per."""
     def __init__(self, ticks):
         self.ticks = ticks
 
     def get_slippage_approximation(self, asset, order):
         return float(asset.symbol_properties.minimum_price_variation) * self.ticks
 
-FT_CELLS = [(f"T{t:g}S{s:g}", t, s)
-            for t in (0.5, 1, 1.5, 2)
-            for s in (0.5, 1, 1.5, 2)]
+FT_CELLS = [(f"T{t:g}S{s:g}", t, s) for t in (.5, 1, 1.5, 2)
+            for s in (.5, 1, 1.5, 2)]
 
 INSTRUMENT_SPECS = {
     "NQ":  (Futures.Indices.NASDAQ_100_E_MINI,       0.25, 20.0),
@@ -1339,7 +1336,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     def _export_charts(self):
         
-        local = {}
+        local, fx = {}, {}
+        fc, fs = Chart("E19B-FT"), Series("ft-a", SeriesType.SCATTER)
+        fc.add_series(fs)
+        self._n_ft_rows = 0
         for e in getattr(self, "_ev_results", []):
             cname = f"E19B-h{e['h_min']}"
             sname = "a" if e.get("bias_aligned") else "o"
@@ -1350,12 +1350,17 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             mask = (int(bool(e.get("shadow_cisd")))
                     | int(bool(e.get("shadow_fvg"))) << 1
                     | int(bool(e.get("shadow_ifvg"))) << 2)
+            if sname == "a" and e["h_min"] == 120:
+                p = 0
+                for i2, (k2, _, _) in enumerate(FT_CELLS):
+                    v = e.get("ft", {}).get(k2)
+                    c = 0 if v is None else 3 if v == 99 else 1 if v > 0 else 2
+                    p |= c << (2 * i2)
+                x = fx.get(ts_dt, 0); fx[ts_dt] = x + 1
+                fs.add_point(ts_dt + timedelta(seconds=x), float(p))
+                self._n_ft_rows += 1
             if cname not in local:
                 ch = Chart(cname)
-                ch.add_series(Series("fta-a",
-                                     SeriesType.SCATTER))
-                ch.add_series(Series("ftb-a",
-                                     SeriesType.SCATTER))
                 pres = ("", "rd-", "mfe-", "mae-", "mask-")
                 for pre in pres:
                     ch.add_series(Series(pre + "a",
@@ -1366,18 +1371,12 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             vals = {"": e["ret_r"], "rd-": e["risk_dist"],
                     "mfe-": e["mfe_r"], "mae-": e["mae_r"],
                     "mask-": float(mask)}
-            if (sname == "a" and e["h_min"] == 120
-                    and e.get("ft")):
-                tb = sb = 0
-                for i2, v2 in enumerate(e["ft"].values()):
-                    tb |= (1 << i2) if v2 >= 0 else 0
-                    sb |= (1 << i2) if v2 <= 0 else 0
-                vals["fta-"], vals["ftb-"] = float(tb), float(sb)
             for pre, v in vals.items():
                 sr = local[cname].series[pre + sname]
                 sr.add_point(ts_dt, float(v))
         for ch in local.values():
             self.add_chart(ch)
+        self.add_chart(fc)
 
     def on_end_of_algorithm(self):
         held = 0
@@ -1456,6 +1455,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             for k5, v5 in (("d_rows_total", len(self.trade_economics)),
                            ("d_ev_results", len(self._ev_results)),
                 ("n_event_rows", len(self._ev_results)),
+                           ("n_ft_rows", self._n_ft_rows),
                            ("d_open_at_end", held),
                            ("d_pos_side_end", self.pos_side),
                            ("d_n_fillevents", getattr(
@@ -1500,5 +1500,3 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             else:
                 cur = 0
         return best
-
-# ft-build-bump v2.9.1

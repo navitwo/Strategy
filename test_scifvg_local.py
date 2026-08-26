@@ -748,6 +748,119 @@ def test_e19b_candidates_post_reclaim():
           "wall-clock horizons, shadow labels, ObjectStore export")
 
 
+def test_ft_export_is_one_exact_32bit_series():
+    """FT repair: sixteen cells use exactly two bits each in one series.
+
+    This drives the real chart-export entry point. The four-code fixture
+    repeats undecided/target/stop/ambiguous so every encoding is exercised.
+    """
+    a = make_alg()
+    codes = (0, 1, 2, 3) * 4
+    ft = {}
+    for (key, target, stop), code in zip(mod.FT_CELLS, codes):
+        if code == 1:
+            ft[key] = target
+        elif code == 2:
+            ft[key] = -stop
+        elif code == 3:
+            ft[key] = 99
+    a._ev_results = [{
+        "event_id": "ft-1", "last_reclaim_et": "2024-03-04 10:00:00",
+        "bias_aligned": True, "arm": "primary", "side": 1,
+        "date": "2024-03-04", "h_min": 120, "ret_r": 0.0,
+        "entry_px": 100.0, "stop_px": 99.0, "risk_dist": 1.0,
+        "shadow_mask": 0, "shadow_cisd": False, "shadow_fvg": False,
+        "shadow_ifvg": False, "ft": ft, "mfe_r": 2.0, "mae_r": -2.0,
+    }]
+
+    a._export_charts()
+
+    assert "E19B-FT" in a.charts, a.charts.keys()
+    chart = a.charts["E19B-FT"]
+    assert set(chart.series) == {"ft-a"}, chart.series.keys()
+    assert len(chart.series["ft-a"].values) == 1
+    packed = chart.series["ft-a"].values[0].y
+    expected = sum(code << (2 * i) for i, code in enumerate(codes))
+    assert packed == float(expected)
+    assert 0 <= expected <= (2 ** 32 - 1)
+    assert int(float(expected)) == expected, "32-bit payload must be exact in float64"
+    assert a._n_ft_rows == 1
+    print("PASS FT export: one exact 32-bit/two-bit-per-cell series")
+
+
+def test_ft_export_preserves_event_time_and_uniquifies_collisions():
+    """FT x carries result time; same-time events get reversible offsets."""
+    a = make_alg()
+    event = {
+        "event_id": "ft-1", "last_reclaim_et": "2024-03-04 10:00:00",
+        "bias_aligned": True, "arm": "primary", "side": 1,
+        "date": "2024-03-04", "h_min": 120, "ret_r": 0.0,
+        "entry_px": 100.0, "stop_px": 99.0, "risk_dist": 1.0,
+        "shadow_mask": 0, "shadow_cisd": False, "shadow_fvg": False,
+        "shadow_ifvg": False, "ft": {}, "mfe_r": 0.0, "mae_r": 0.0,
+    }
+    a._ev_results = [dict(event), dict(event, event_id="ft-2")]
+    a._export_charts()
+    points = a.charts["E19B-FT"].series["ft-a"].values
+    expected = datetime(2024, 3, 4, 10, 0)
+    assert [point.x for point in points] == [
+        expected, expected + timedelta(seconds=1)]
+    print("PASS FT export: event time preserved with collision ordinal")
+
+
+def test_ft_screen_probability_nondecreasing_in_stop_width():
+    """For each fixed target, widening the stop cannot lower target-first p."""
+    import d44_e19b_ft as ft_driver
+    assert hasattr(ft_driver, "summarize_ft_rows")
+    assert hasattr(ft_driver, "assert_stop_monotonic")
+    # Three event paths. For every target, widening the stop converts the
+    # second path from stop-first to target-first and never the reverse.
+    rows = [
+        {"codes": [2, 2, 2, 2] * 4},
+        {"codes": [2, 1, 1, 1] * 4},
+        {"codes": [1, 1, 1, 1] * 4},
+    ]
+    screen = ft_driver.summarize_ft_rows(rows)
+    ft_driver.assert_stop_monotonic(screen)
+    for target in (0.5, 1.0, 1.5, 2.0):
+        ps = [screen[f"T{target:g}S{stop:g}"]["p_target_given_decided"]
+              for stop in (0.5, 1.0, 1.5, 2.0)]
+        assert ps == sorted(ps), (target, ps)
+        assert ps[0] < ps[-1], "fixture must prove stop width engages"
+    print("PASS FT screen: target-first probability is monotone in stop width")
+
+
+def test_ft_screen_prices_same_bar_ambiguity_as_stop():
+    """Economic summaries retain code 3 but price it stop-first."""
+    import d44_e19b_ft as ft_driver
+    rows = [{"codes": [code] * 16} for code in (0, 1, 2, 3)]
+    cell = ft_driver.summarize_ft_rows(rows)["T1S0.5"]
+    assert cell["ambiguous"] == 1
+    assert cell["n_decided"] == 3
+    assert cell["p_target_given_decided"] == 1 / 3
+    assert cell["mean_R_per_unit_risked"] == 0.0
+    print("PASS FT screen: same-bar ambiguity is pessimistic stop-first")
+
+
+def test_ft_ledger_required_and_count_reconciled():
+    """Any non-empty event study must retrieve a non-empty, exact FT ledger."""
+    import d44_e19b_ft as ft_driver
+    assert hasattr(ft_driver, "validate_ft_ledger")
+    for rt, rows in (({"d_ev_results": "8", "n_ft_rows": "0"}, []),
+                     ({"d_ev_results": "8", "n_ft_rows": "2"},
+                      [{"codes": [1] * 16}])):
+        try:
+            ft_driver.validate_ft_ledger(rt, rows)
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError("invalid FT ledger must fail closed")
+    ft_driver.validate_ft_ledger(
+        {"d_ev_results": "8", "n_ft_rows": "2"},
+        [{"codes": [1] * 16}, {"codes": [2] * 16}])
+    print("PASS FT ledger: non-empty + exact RuntimeStatistic reconciliation")
+
+
 
 
 
@@ -802,5 +915,10 @@ if __name__ == "__main__":
     test_exit_time_algo_clock_and_drain()
     test_floor_params_in_read_list()
     test_e19b_candidates_post_reclaim()
+    test_ft_export_is_one_exact_32bit_series()
+    test_ft_export_preserves_event_time_and_uniquifies_collisions()
+    test_ft_screen_probability_nondecreasing_in_stop_width()
+    test_ft_screen_prices_same_bar_ambiguity_as_stop()
+    test_ft_ledger_required_and_count_reconciled()
     test_preregistration_present()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")
