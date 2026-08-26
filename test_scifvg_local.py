@@ -808,22 +808,23 @@ def test_ft_export_preserves_event_time_and_uniquifies_collisions():
     print("PASS FT export: event time preserved with collision ordinal")
 
 
-def test_ft_chart_registered_before_platform_chart_cap():
-    """The sole FT chart must be registered before four horizon charts."""
+def test_ft_chart_added_after_points_for_snapshot_semantics():
+    """Hosted AddChart snapshots the populated object at registration."""
     a = make_alg()
     base = {
         "event_id": "ft-1", "last_reclaim_et": "2024-03-04 10:00:00",
         "bias_aligned": True, "ret_r": 0.0, "risk_dist": 1.0,
         "shadow_cisd": False, "shadow_fvg": False, "shadow_ifvg": False,
-        "ft": {}, "mfe_r": 0.0, "mae_r": 0.0,
+        "ft": {"T0.5S0.5": 0.5}, "mfe_r": 0.5, "mae_r": 0.0,
     }
-    a._ev_results = [dict(base, h_min=h) for h in (30, 60, 120, 240)]
-    accepted = {}
-    a.add_chart = lambda chart: (accepted.setdefault(chart.name, chart)
-                                 if len(accepted) < 4 else None)
+    a._ev_results = [dict(base, h_min=120)]
+    snapshots = {}
+    a.add_chart = lambda chart: snapshots.setdefault(
+        chart.name, {name: len(series.values)
+                     for name, series in chart.series.items()})
     a._export_charts()
-    assert "E19B-FT" in accepted, accepted.keys()
-    print("PASS FT export: FT chart precedes platform chart cap")
+    assert snapshots["E19B-FT"]["ft-a"] == 1, snapshots
+    print("PASS FT export: populated chart registered after point creation")
 
 
 def test_ft_export_stays_within_four_custom_charts():
@@ -951,7 +952,7 @@ if __name__ == "__main__":
     test_e19b_candidates_post_reclaim()
     test_ft_export_is_one_exact_32bit_series()
     test_ft_export_preserves_event_time_and_uniquifies_collisions()
-    test_ft_chart_registered_before_platform_chart_cap()
+    test_ft_chart_added_after_points_for_snapshot_semantics()
     test_ft_export_stays_within_four_custom_charts()
     test_ft_screen_probability_nondecreasing_in_stop_width()
     test_ft_screen_prices_same_bar_ambiguity_as_stop()

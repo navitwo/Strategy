@@ -270,3 +270,14 @@ redundant H*=120 base chart in this correction-only export with the one-series
 FT chart, retaining three base horizon charts and staying at four charts total.
 The committed E19B-R ledgers remain the campaign evidence. FT32B is invalid and
 is not one of the four required valid market exports.
+
+`E19BR-FT32C-NQ` (`47a234c7cd8514760e346fb764c6b2a4`) isolated the
+second hosted-chart condition. It stayed at four charts and omitted the H*=120
+base chart as intended, but again returned zero FT rows with
+`n_ft_rows=388`/`d_ev_results=4084`. Unlike every populated horizon chart, the
+FT chart had been registered before its points were added; hosted `AddChart`
+materializes the object at registration rather than retaining subsequent
+mutations. Revision FT32D combines both necessary conditions: four charts
+total and FT registration only after all points are present. A permanent
+snapshot-semantics regression is red on FT32C and green on FT32D. FT32C is
+invalid and is not one of the four required valid market exports.

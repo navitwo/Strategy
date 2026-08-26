@@ -1338,7 +1338,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         
         local,fx={},{}
         fc, fs = Chart("E19B-FT"), Series("ft-a", SeriesType.SCATTER)
-        fc.add_series(fs);self.add_chart(fc)
+        fc.add_series(fs)
         self._n_ft_rows=0
         for e in getattr(self, "_ev_results", []):
             cname = f"E19B-h{e['h_min']}"
@@ -1375,8 +1375,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             for pre, v in vals.items():
                 sr = local[cname].series[pre + sname]
                 sr.add_point(ts_dt, float(v))
-        for ch in local.values():
-            self.add_chart(ch)
+        for ch in local.values():self.add_chart(ch)
+        self.add_chart(fc)
 
     def on_end_of_algorithm(self):
         held = 0
