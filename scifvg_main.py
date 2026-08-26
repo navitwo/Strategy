@@ -1336,11 +1336,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     def _export_charts(self):
         
-        local, fx = {}, {}
+        local,fx={},{}
         fc, fs = Chart("E19B-FT"), Series("ft-a", SeriesType.SCATTER)
-        fc.add_series(fs)
-        self.add_chart(fc)
-        self._n_ft_rows = 0
+        fc.add_series(fs);self.add_chart(fc)
+        self._n_ft_rows=0
         for e in getattr(self, "_ev_results", []):
             cname = f"E19B-h{e['h_min']}"
             sname = "a" if e.get("bias_aligned") else "o"
@@ -1360,6 +1359,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 x = fx.get(ts_dt, 0); fx[ts_dt] = x + 1
                 fs.add_point(ts_dt + timedelta(seconds=x), float(p))
                 self._n_ft_rows += 1
+            if e["h_min"]==120:continue
             if cname not in local:
                 ch = Chart(cname)
                 pres = ("", "rd-", "mfe-", "mae-", "mask-")

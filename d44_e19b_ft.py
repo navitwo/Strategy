@@ -8,7 +8,7 @@ from qc_api import (backtest_create, backtest_list, chart_read,
                     poll_backtest)
 
 PID = 35506697
-REV = "FT32B"
+REV = "FT32C"
 TARGETS = (0.5, 1.0, 1.5, 2.0)
 STOPS = (0.5, 1.0, 1.5, 2.0)
 CELLS = [(f"T{target:g}S{stop:g}", target, stop)

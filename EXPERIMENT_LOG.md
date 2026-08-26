@@ -256,7 +256,17 @@ The first post-retraction retrieval attempt, `E19BR-FT32-NQ`
 development export with `d_ev_results=4084` and declared `n_ft_rows=388`, but
 the `E19B-FT` chart returned zero series/rows. The driver therefore failed
 closed before writing a ledger or screen. Root cause: the dedicated FT chart
-was registered after the four horizon charts and was the fifth custom chart;
-the hosted chart cap dropped it. A permanent regression now simulates the
-four-chart cap and requires `E19B-FT` to be registered first. This attempt is
+was the fifth custom chart and the hosted chart cap dropped it. The initial
+repair hypothesis was to register it first; a permanent regression required
+that ordering. This attempt is
 not evidence and is not one of the four required valid market exports.
+
+`E19BR-FT32B-NQ` (`6095d35dd46d9e0d13b1b02a936ef3b6`) then falsified
+the registration-order hypothesis: it again declared `n_ft_rows=388` for
+`d_ev_results=4084`, while `E19B-FT` returned zero rows and all four horizon
+charts remained populated. The operative hosted limit is therefore four
+custom charts, not first-registration order. Revision FT32C replaces the
+redundant H*=120 base chart in this correction-only export with the one-series
+FT chart, retaining three base horizon charts and staying at four charts total.
+The committed E19B-R ledgers remain the campaign evidence. FT32B is invalid and
+is not one of the four required valid market exports.
