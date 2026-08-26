@@ -30,9 +30,10 @@ def run(tag):
     res = poll_backtest(PID, r["backtest_id"], max_wait=3600, poll_s=15)
     bt = res if isinstance(res, dict) else {}
     rt = bt.get("runtimeStatistics") or {}
-    err = str(bt.get("error", ""))[:200]
-    if err:
+    err = str(bt.get("error") or "")[:200]
+    if err and err != "None":
         print(f"{tag}: ERROR {err}", flush=True)
+        fails.append(f"{tag}: {err}")
     return r["backtest_id"], rt
 
 
@@ -60,7 +61,7 @@ for h in (30, 60, 120, 240):
             continue
         for pt in sv.get("values", []):
             retrieved += 1
-            y = float(pt[1])
+            y = float(pt["y"] if isinstance(pt, dict) else pt[1])
             if y < floor_val - 1e-9:
                 rd_violations += 1
 print(f"declared n_event_rows={n_declared}, retrieved rd rows={retrieved}")

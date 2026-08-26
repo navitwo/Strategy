@@ -1,0 +1,9 @@
+E19BR-smoke-A: submitted 1eb66983a4f099216f49a240b7b75c82
+E19BR-smoke-A: ERROR None
+E19BR-smoke-B: submitted 5d5ba1164d9436e816a65108503ed2a7
+E19BR-smoke-B: ERROR None
+Traceback (most recent call last):
+  File "C:\Users\Jostb\OneDrive\Documents\Hermes Projects\Strategy\d40_e19br_smoke.py", line 63, in <module>
+    y = float(pt[1])
+              ~~^^^
+KeyError: 1

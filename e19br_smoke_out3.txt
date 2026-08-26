@@ -1,0 +1,8 @@
+E19BR-smoke-A: submitted 545a684970b0090dbc7544b1e0b41a0f
+E19BR-smoke-B: submitted 1d0caf30c6674b978d255a2d0345daab
+declared n_event_rows=288, retrieved rd rows=288
+rd below tick-floor: 0
+note: zero floor rejects in this window (acceptable)
+REPLAY EQUALITY on 163 keys
+--------------------------------------------------
+E19B-R SMOKE: PASS (complete ledger via charts, floor enforced, replay deterministic)
