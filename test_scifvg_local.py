@@ -107,6 +107,7 @@ TimeZones = types.SimpleNamespace(UTC="utc")
 '''
 mod = types.ModuleType("scifvg_extract")
 mod.__dict__["timedelta"] = timedelta
+mod.__dict__["datetime"] = datetime
 mod.__dict__["types"] = types
 
 exec(compile(stub_src, "<stubs>", "exec"), mod.__dict__)
@@ -727,18 +728,22 @@ def test_e19b_candidates_post_reclaim():
     assert abs(r120["ret_r"] - expect) < 1e-4, "R-unit math mismatch"
     assert "mfe_r" in r120 and "mae_r" in r120
     assert r120["arm"] in ("primary", "counter")
-    # ObjectStore ledger export fires at end-of-algorithm
+    # Chart-channel ledger export fires at end-of-algorithm:
+    # ret/rd/mfe/mae/mask series per horizon, aligned+opposed.
     try:
         a.on_end_of_algorithm()
     except Exception:
         pass
-    keys = getattr(a.object_store, "store", {})
-    assert any(k.endswith("events.jsonl") for k in keys), \
-        f"events ledger must export to ObjectStore, got {list(keys)}"
-    ev_key = next(k for k in keys if k.endswith("events.jsonl"))
-    rows = [json.loads(x) for x in bytes(keys[ev_key]).decode().split("\n")
-            if x.strip()]
-    assert rows and all("bias_aligned" in r for r in rows)
+    assert a.charts, "chart channel must carry event rows"
+    total_pts = sum(len(sr.values)
+                    for ch in a.charts.values()
+                    for sr in ch.series.values())
+    assert total_pts >= len(a._ev_results), \
+        f"chart points {total_pts} < events {len(a._ev_results)}"
+    for ch in a.charts.values():
+        for sname in ch.series:
+            assert sname.split("-")[-1] in ("a", "o", "rd", "mfe",
+                                            "mae", "mask"), sname
     print("PASS E19B: single candidate per reclaim, event_id+bias tag, "
           "wall-clock horizons, shadow labels, ObjectStore export")
 

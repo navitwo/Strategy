@@ -6,7 +6,7 @@ import json
 import math
 
 class ScifvgFeeModel(FeeModel):
-    """Flat commission per side per contract (USD)."""
+    """Flat commission per side per contract (U."""
     def __init__(self, per_side):
         self.per_side = float(per_side)
         super().__init__()
@@ -16,7 +16,7 @@ class ScifvgFeeModel(FeeModel):
         return OrderFee(CashAmount(fee, "USD"))
 
 class TickSlippage:
-    """Fixed adverse slippage of N ticks per fill."""
+    """Fixed adverse slippage of N ticks per fi."""
     def __init__(self, ticks):
         self.ticks = ticks
 
@@ -32,7 +32,7 @@ INSTRUMENT_SPECS = {
 }
 
 FUNNEL_KEYS = [
-    "sessions", "no_prior_levels", "no_bias", "attempts_used", "excursion_depth_kills", "rollover_no_mark",
+    "sessions", "no_prior_levels", "no_bias", "attempts_used", "excursion_depth_kills", "L_floor_rejects", "S_floor_rejects", "rollover_no_mark",
     "L_attempts", "L_depth_rejects", "L_no_reclaim", "L_sweep_ok",
     "L_cisd_ok", "L_cisd_timeout", "L_inv_ok", "L_inv_timeout",
     "L_submits", "L_fills", "L_size_skips", "L_cancel_expiry",
@@ -79,6 +79,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             "event_horizons": [30, 60, 120, 240],
             "depth_min_bps": 0.0, "depth_max_bps": 0.0,
             "stop_buffer_bps": 0.0,
+            "min_stop_ticks": 0.0, "floor_atr_frac": 0.0,
         }
         cfg = {}
         for k, dv in defaults.items():
@@ -96,6 +97,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.exp_hash = hashlib.md5(canon.encode()).hexdigest()[:8]
         self._ev_candidates = []
         self._ev_results = []
+        self._tr_series = []
+        self._atr5 = None
         self.charts = {}
         self.cfg = cfg
 
@@ -239,7 +242,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return "L" if side > 0 else "S"
 
     def _eod_resolve(self, et, cid):
-        """Close open cycle at last mark; r is net (fees deducted)."""
+        """Close open cycle at last mark; r is net."""
         side = self.pos_side
         exit_px = getattr(self, "_last_min_close", None) or self.entry_avg
         r_gross_e = ((exit_px - self.entry_avg) / self.risk_dist) * side
@@ -532,10 +535,19 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if closed_back:
                 self._inc(f"{K}_sweep_ok")
                 if str(self.cfg.get("variant")) == "events_only":
-                    buf = self._stop_buffer(b["close"])
-                    stop = (s["extreme"] - buf) if side > 0 \
-                        else (s["extreme"] + buf)
+                    stop = ((s["extreme"]
+                             - self._stop_buffer(b["close"])) if side > 0
+                            else (s["extreme"]
+                                  + self._stop_buffer(b["close"])))
                     dist = abs(b["close"] - stop)
+                    floor = max(float(self.cfg.get("min_stop_ticks", 0))
+                                * self.tick,
+                                float(self.cfg.get("floor_atr_frac", 0))
+                                * (self._atr5 or 0))
+                    if dist < floor:
+                        self._inc(f"{self._sk(side)}_floor_rejects")
+                        self.setup = None
+                        return
                     self._ev_seq = getattr(self, "_ev_seq", 0) + 1
                     self._ev_candidates.append({
                         "event_id": f"{self.exp_hash}-{self._ev_seq:06d}",
@@ -820,6 +832,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.d_bars5_total += 1
         self._abs_bar = getattr(self, "_abs_bar", -1) + 1
         self._abs_now = self._abs_bar
+        _pc = self.bars5[-1]["close"] if self.bars5 else agg["close"]
+        _tr = max(agg["high"] - agg["low"], abs(agg["high"] - _pc),
+                  abs(_pc - agg["low"]))
+        self._tr_series.append(_tr)
+        if len(self._tr_series) > 14:
+            self._tr_series.pop(0)
+        if len(self._tr_series) == 14:
+            self._atr5 = sum(self._tr_series) / 14.0
         agg["abs"] = self._abs_bar
         if len(self.bars5) > 600:
             trim = len(self.bars5) - 600
@@ -870,7 +890,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self._cancel_pending(f"{K}_cancel_window")
 
     def _elapsed_min(self, ev, agg):
-        """Minutes since reclaim confirmation (wall-clock)."""
+        """Minutes since reclaim confirmation (wall."""
         try:
             return (agg["ts"] - ev["ts0"]) / 60.0
         except Exception:
@@ -930,6 +950,13 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         "side": ev["side"], "date": ev["date"],
                         "h_min": h, "ret_r": round(ret_r, 6),
                         "entry_px": round(ev["px"], 2),
+                        "stop_px": round(ev["stop_px"], 2),
+                        "risk_dist": round(ev["risk_dist"], 4),
+                        "shadow_mask": (int(bool(
+                            ev.get("shadow_cisd")))
+                            | int(bool(ev.get("shadow_fvg"))) << 1
+                            | int(bool(ev.get("shadow_ifvg"))) << 2),
+                        "censored": False,
                         "mfe_r": round(ev["mfe_r"], 4),
                         "mae_r": round(ev["mae_r"], 4),
                         **{k: ev.get(k) for k in
@@ -1212,18 +1239,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.setup = None
         self._inc("forced_flattens")
 
-    def _sample_equity(self):
-        """Equity drift detector."""
-        try:
-            eq = float(self.portfolio.total_portfolio_value)
-        except Exception:
-            return
-        if self._last_equity is not None:
-            self._equity_deltas.append(eq - self._last_equity)
-        self._last_equity = eq
-
     def _reconcile_pnl(self):
-        """Hard gate identities (see conformance doc)."""
+        """Hard gate identities (see conformance do."""
         out = {"ok": False}
         try:
             tb_trades = list(self.trade_builder.closed_trades)
@@ -1312,7 +1329,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return out
 
     def _export_charts(self):
-        """Build charts locally; register once at end."""
+        """Build charts locally; register once at e."""
         local = {}
         for e in getattr(self, "_ev_results", []):
             cname = f"E19B-h{e['h_min']}"
@@ -1322,37 +1339,24 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             except Exception:
                 continue
             ts = ts_dt
+            mask = (int(bool(e.get("shadow_cisd")))
+                    | int(bool(e.get("shadow_fvg"))) << 1
+                    | int(bool(e.get("shadow_ifvg"))) << 2)
             if cname not in local:
                 ch = Chart(cname)
-                sa = Series("a", SeriesType.SCATTER)
-                so = Series("o", SeriesType.SCATTER)
-                ch.add_series(sa)
-                ch.add_series(so)
+                for sfx in ("a", "o"):
+                    for pre in ("", "rd-", "mfe-", "mae-", "mask-"):
+                        ch.add_series(Series(pre + sfx,
+                                             SeriesType.SCATTER))
                 local[cname] = ch
-            sr = local[cname].series[sname]
-            sr.add_point(ts_dt, float(e['ret_r']))
+            vals = {"": e["ret_r"], "rd-": e["risk_dist"],
+                    "mfe-": e["mfe_r"], "mae-": e["mae_r"],
+                    "mask-": float(mask)}
+            for pre, v in vals.items():
+                sr = local[cname].series[pre + sname]
+                sr.add_point(ts_dt, float(v))
         for ch in local.values():
             self.add_chart(ch)
-
-    def _export_ledgers(self, rec):
-        """EVENT/TRADE/META to Object Store."""
-        try:
-            t = self.exp_hash
-            for key, rows in (f"E19B/{t}/events.jsonl",
-                              getattr(self, "_ev_results", [])), \
-                             (f"E19B/{t}/trades.jsonl",
-                              self.trade_economics):
-                buf = "\n".join(json.dumps(r, sort_keys=True) for r in rows)
-                self.object_store.save_bytes(key, buf.encode())
-            meta = {"funnel": self.fun, "reconcile": rec, "cfg": self.cfg}
-            self.object_store.save_bytes(f"E19B/{t}/meta.json",
-                                         json.dumps(meta,
-                                                    sort_keys=True).encode())
-            self.RuntimeStatistics["os_events"] = str(len(self._ev_results))
-            self.RuntimeStatistics["os_trades"] = \
-                str(len(self.trade_economics))
-        except Exception as ex:
-            self.Debug(f"OBJECT STORE EXPORT FAILED: {ex}")
 
     def on_end_of_algorithm(self):
         held = 0
@@ -1372,8 +1376,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         gross_w = sum(r for r in rs if r > 0)
         gross_l = -sum(r for r in rs if r <= 0)
         pf = (gross_w / gross_l) if gross_l > 0 else (999.0 if gross_w > 0 else 0.0)
-        self._export_ledgers(rec)
-        self.Debug("RECONCILE " + json.dumps(rec, sort_keys=True)[:600])
         self.Debug(json.dumps({
             "exp_hash": self.exp_hash, "cfg": self.cfg,
             "trades": len(rs), "wins": wins, "losses": losses,

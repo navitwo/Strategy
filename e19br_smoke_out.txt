@@ -1,0 +1,11 @@
+E19BR-smoke-A: submitted 922db83bcc92177a1e880ac86de13eee
+E19BR-smoke-A: ERROR None
+E19BR-smoke-B: submitted 9115b7c18fcc2992c9222fd9d0ae94bc
+E19BR-smoke-B: ERROR None
+declared n_event_rows=-1, retrieved rd rows=0
+rd below tick-floor: 0
+note: zero floor rejects in this window (acceptable)
+REPLAY EQUALITY on 162 keys
+--------------------------------------------------
+E19B-R SMOKE: FAIL
+   row-count mismatch declared=-1 retrieved=0
