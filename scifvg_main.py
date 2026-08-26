@@ -1438,6 +1438,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 str(self.fun.get("untracked_fills", 0))
             for k5, v5 in (("d_rows_total", len(self.trade_economics)),
                            ("d_ev_results", len(self._ev_results)),
+                ("n_event_rows", len(self._ev_results)),
                            ("d_open_at_end", held),
                            ("d_race_rows", sum(1 for t in
                             self.trade_economics if t.get("is_race"))),
