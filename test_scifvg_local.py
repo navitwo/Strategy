@@ -777,9 +777,9 @@ def test_ft_export_is_one_exact_32bit_series():
 
     assert "E19B-FT" in a.charts, a.charts.keys()
     chart = a.charts["E19B-FT"]
-    assert set(chart.series) == {"ft-a"}, chart.series.keys()
-    assert len(chart.series["ft-a"].values) == 1
-    packed = chart.series["ft-a"].values[0].y
+    assert set(chart.series) == {"a"}, chart.series.keys()
+    assert len(chart.series["a"].values) == 1
+    packed = chart.series["a"].values[0].y
     expected = sum(code << (2 * i) for i, code in enumerate(codes))
     assert packed == float(expected)
     assert 0 <= expected <= (2 ** 32 - 1)
@@ -801,7 +801,7 @@ def test_ft_export_preserves_event_time_and_uniquifies_collisions():
     }
     a._ev_results = [dict(event), dict(event, event_id="ft-2")]
     a._export_charts()
-    points = a.charts["E19B-FT"].series["ft-a"].values
+    points = a.charts["E19B-FT"].series["a"].values
     expected = datetime(2024, 3, 4, 10, 0)
     assert [point.x for point in points] == [
         expected, expected + timedelta(seconds=1)]
@@ -823,7 +823,7 @@ def test_ft_chart_added_after_points_for_snapshot_semantics():
         chart.name, {name: len(series.values)
                      for name, series in chart.series.items()})
     a._export_charts()
-    assert snapshots["E19B-FT"]["ft-a"] == 1, snapshots
+    assert snapshots["E19B-FT"]["a"] == 1, snapshots
     print("PASS FT export: populated chart registered after point creation")
 
 
@@ -841,6 +841,20 @@ def test_ft_export_stays_within_four_custom_charts():
     assert set(a.charts) == {
         "E19B-FT", "E19B-h30", "E19B-h60", "E19B-h240"}, a.charts.keys()
     print("PASS FT export: four-chart ceiling respected")
+
+
+def test_ft_series_reuses_existing_global_quota_name():
+    """LEAN quotas unique series names globally, so FT must reuse `a`."""
+    a = make_alg()
+    a._ev_results = [{
+        "event_id": "ft-1", "last_reclaim_et": "2024-03-04 10:00:00",
+        "bias_aligned": True, "h_min": 120, "ret_r": 0.0,
+        "risk_dist": 1.0, "shadow_cisd": False, "shadow_fvg": False,
+        "shadow_ifvg": False, "ft": {}, "mfe_r": 0.0, "mae_r": 0.0,
+    }]
+    a._export_charts()
+    assert set(a.charts["E19B-FT"].series) == {"a"}
+    print("PASS FT export: no eleventh unique series name")
 
 
 def test_ft_screen_probability_nondecreasing_in_stop_width():
@@ -954,6 +968,7 @@ if __name__ == "__main__":
     test_ft_export_preserves_event_time_and_uniquifies_collisions()
     test_ft_chart_added_after_points_for_snapshot_semantics()
     test_ft_export_stays_within_four_custom_charts()
+    test_ft_series_reuses_existing_global_quota_name()
     test_ft_screen_probability_nondecreasing_in_stop_width()
     test_ft_screen_prices_same_bar_ambiguity_as_stop()
     test_ft_ledger_required_and_count_reconciled()

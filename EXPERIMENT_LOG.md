@@ -281,3 +281,16 @@ mutations. Revision FT32D combines both necessary conditions: four charts
 total and FT registration only after all points are present. A permanent
 snapshot-semantics regression is red on FT32C and green on FT32D. FT32C is
 invalid and is not one of the four required valid market exports.
+
+`E19BR-FT32D-NQ` (`705cb6ce80ba6e10f552ad8c179b24b8`) disproved the
+two-condition chart-count/materialization hypothesis: the FT series was still
+absent with `n_ft_rows=388`/`d_ev_results=4084`. Inspection of LEAN's official
+`BacktestingResultHandler.SampleRange` source identified the actual mechanism:
+the hosted series quota is tracked in a global `HashSet` keyed only by
+`series.Name`, not by chart. The four horizon charts reuse the same ten names;
+the dedicated FT name `ft-a` was an eleventh unique name and was therefore
+ignored. Revision FT32E keeps one dedicated FT chart and one packed series but
+names that series `a`, reusing an already-admitted quota identity; the driver
+reads `E19B-FT/a`. The earlier chart-count and registration-timing hypotheses
+are superseded. FT32D is invalid and is not one of the four required valid
+market exports.

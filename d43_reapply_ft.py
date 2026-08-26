@@ -12,7 +12,7 @@ import tempfile
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 TARGET = os.path.join(ROOT, "scifvg_main.py")
-REQUIRED = (b"FT_CELLS", b'Chart("E19B-FT")', b'Series("ft-a"',
+REQUIRED = (b"FT_CELLS", b'Chart("E19B-FT")', b'Series("a",',
             b'"n_ft_rows"')
 FORBIDDEN = (b'Series("fta-a"', b'Series("ftb-a"')
 

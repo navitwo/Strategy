@@ -1337,7 +1337,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
     def _export_charts(self):
         
         local,fx={},{}
-        fc, fs = Chart("E19B-FT"), Series("ft-a", SeriesType.SCATTER)
+        fc, fs = Chart("E19B-FT"), Series("a", SeriesType.SCATTER)
         fc.add_series(fs)
         self._n_ft_rows=0
         for e in getattr(self, "_ev_results", []):

@@ -11,7 +11,7 @@ from qc_api import (compile_create, poll_compile, read_files, sync_file)
 
 PID = 35506697
 SOURCE = os.path.join(ROOT, "scifvg_main.py")
-REQUIRED = ("FT_CELLS", 'Chart("E19B-FT")', 'Series("ft-a"',
+REQUIRED = ("FT_CELLS", 'Chart("E19B-FT")', 'Series("a",',
             '"n_ft_rows"')
 FORBIDDEN = ('Series("fta-a"', 'Series("ftb-a"')
 

@@ -8,7 +8,7 @@ from qc_api import (backtest_create, backtest_list, chart_read,
                     poll_backtest)
 
 PID = 35506697
-REV = "FT32D"
+REV = "FT32E"
 TARGETS = (0.5, 1.0, 1.5, 2.0)
 STOPS = (0.5, 1.0, 1.5, 2.0)
 CELLS = [(f"T{target:g}S{stop:g}", target, stop)
@@ -27,7 +27,7 @@ def decode_ft_value(value):
 
 def ft_rows_from_chart(inst, backtest_id):
     payload = chart_read(PID, backtest_id, "E19B-FT")
-    series = payload.get("chart", {}).get("series", {}).get("ft-a", {})
+    series = payload.get("chart", {}).get("series", {}).get("a", {})
     points = series.get("values", [])
     rows = []
     for row_index, point in enumerate(points):
