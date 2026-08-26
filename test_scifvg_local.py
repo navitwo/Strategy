@@ -751,6 +751,22 @@ def test_e19b_candidates_post_reclaim():
 
 
 
+def test_floor_params_in_read_list():
+    """E19B-R: floor params must be BOTH in the raw read list AND defaults;
+    a default without a raw read silently ignores cloud parameters."""
+    import re as _re
+    src = open("scifvg_main.py").read()
+    m = _re.search(r"for p in \(([^)]*)\):", src)
+    read_list = m.group(1)
+    m2 = _re.search(r"defaults = \{(.*?)\}", src, _re.S)
+    defaults = m2.group(1)
+    for key in ("min_stop_ticks", "floor_atr_frac", "depth_min_bps",
+                "depth_max_bps", "stop_buffer_bps"):
+        assert f'"{key}"' in read_list, f"{key} not readable"
+        assert f'"{key}"' in defaults, f"{key} has no default"
+    print("PASS floor params: read-list + defaults consistent")
+
+
 def test_preregistration_present():
     """Structural gate: PREREGISTRATION_E19B.md must exist with the three
     outcome classes, multiplicity plan, numeric stable-positive definition,
@@ -784,6 +800,7 @@ if __name__ == "__main__":
     test_mirrored_cisd_reference()
     test_identity_gates_can_go_red()
     test_exit_time_algo_clock_and_drain()
+    test_floor_params_in_read_list()
     test_e19b_candidates_post_reclaim()
     test_preregistration_present()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")

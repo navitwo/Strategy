@@ -56,7 +56,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                   "commission_per_side", "window_start_et", "window_end_et",
                   "invert_on_cisd_bar", "entry_location",
                   "pivot_lookback", "pivot_right", "max_attempts_per_day",
-                  "stop_mode", "entry_mode", "random_entry_prob", "variant",
+                  "stop_mode", "min_stop_ticks", "floor_atr_frac", "entry_mode", "random_entry_prob", "variant",
                   "event_horizons", "depth_min_bps", "depth_max_bps",
                   "stop_buffer_bps", "counter_bias_arm"):
             v = self.get_parameter(p)
