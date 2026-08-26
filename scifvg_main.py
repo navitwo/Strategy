@@ -877,7 +877,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             return (self._abs_now - ev["idx0"]) * 5.0
 
     def _shadow_labels(self, s, b):
-        """Shadow labels (never gate)."""
+        
         side = s["side"]
         bars = self.bars5
         n = len(bars)
