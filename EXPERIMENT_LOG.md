@@ -213,3 +213,38 @@ Directive adopted in prescribed order. No optimization started; validation/holdo
   MFE/MAE ledger before hypothesis selection; fresh prereg with bounded
   primary estimator, ex-ante normalizer, sessions<n assertion; optimization
   prohibited absent a demonstrated robust edge.
+
+---
+
+## 2026-08-26 — E19B-R first-touch screen WITHDRAWN
+
+`e19br_ft_screen.json` from commit `6f738fb` is withdrawn and deleted from
+the current tree. It is not evidence, must not be cited, and cannot support
+Campaign 2 hypothesis selection. E19B-R and the administrative closeout are
+unchanged.
+
+The withdrawal is compelled by three reproducible defects:
+
+1. The four committed `e19br_ft_ledger/*_ft.jsonl` files are empty,
+   `e19br_ft_results.jsonl` contains no `ft*` RuntimeStatistic, and
+   `d44_e19b_ft.py` did not retrieve either chart series. The claimed
+   per-event first-touch provenance therefore cannot be reconstructed from
+   the repository.
+2. For several fixed targets, both `p_target_given_decided` and `n` are
+   identical across multiple stop widths. A wider stop must weakly reduce
+   stop-first outcomes, so the equality proves that stop width did not
+   participate in those resolutions.
+3. Every reported cell is exactly reproduced by
+   `p*T - (1-p)*S` using a target-specific `p` insensitive to `S`. This
+   mechanically rewards tighter stops, repeating the bias of the unordered
+   MFE/MAE screen. The reported `mean_R` also used `risk_dist` units rather
+   than units per amount risked; comparable bracket returns require division
+   by stop width.
+
+Repair is restricted to the development-only `events_only` export: one
+32-bit value per event (two bits for each of 16 cells), one chart series,
+an `n_ft_rows` RuntimeStatistic reconciled exactly to retrieved ledger rows,
+per-unit-risked reporting, and permanent monotonicity/non-empty-ledger tests.
+No strategy backtests or optimization are authorized. Validation and holdout
+remain locked, and Campaign 2 hypothesis selection remains blocked pending a
+valid replacement screen.
