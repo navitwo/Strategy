@@ -1338,7 +1338,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             mask = (int(bool(e.get("shadow_cisd")))
                     | int(bool(e.get("shadow_fvg"))) << 1
                     | int(bool(e.get("shadow_ifvg"))) << 2)
-            if sname == "a" and e["h_min"] == 120:
+            if e["h_min"] == 120 and (sname == "a" or
+                    str(self.cfg.get("variant")) == "discovery_only"):
                 p = 0
                 for i2, (k2, _, _) in enumerate(FT_CELLS):
                     v = e.get("ft", {}).get(k2)

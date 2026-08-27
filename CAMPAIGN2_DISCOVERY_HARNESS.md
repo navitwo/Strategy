@@ -24,6 +24,11 @@ They do not place orders, alter the side, change stop construction, resolve
 barriers, or access future bars. A rejection consumes the same physical attempt
 and preserves the attempt/sweep/reclaim funnel.
 
+Unlike the legacy aligned-only FT32E artifact, `discovery_only` transports both
+bias-aligned and bias-opposed admitted events into the same packed `E19B-FT/a`
+series. The `bias_aligned_v1` and `bias_opposed_v1` bits therefore partition the
+shared base population rather than censoring the opposed arm.
+
 ## Predicate contract
 
 `event_predicates.py` exposes a versioned registry. Each predicate receives a

@@ -1190,6 +1190,41 @@ def test_discovery_export_packs_family_mask_above_ft32():
     print("PASS discovery export: FT32 + predicate mask exact in float64")
 
 
+def test_discovery_export_includes_opposed_arm_without_changing_legacy_ft32():
+    """Discovery transports both arms; legacy FT32E remains aligned-only."""
+    import event_predicates as ep
+    opposed = {
+        "event_id": "disc-opposed", "last_reclaim_et": "2024-03-04 10:00:00",
+        "bias_aligned": False, "h_min": 120, "ret_r": 0.0,
+        "risk_dist": 1.0, "shadow_cisd": False, "shadow_fvg": True,
+        "shadow_ifvg": False, "ft": {}, "mfe_r": 0.0, "mae_r": 0.0,
+        "event_predicate_mask": 0b111,
+    }
+    aligned = dict(opposed)
+    aligned.update(event_id="disc-aligned", bias_aligned=True,
+                   event_predicate_mask=0b011)
+    discovery = make_alg()
+    discovery.cfg["variant"] = "discovery_only"
+    discovery._ev_results = [aligned, opposed]
+    discovery._export_charts()
+    values = discovery.charts["E19B-FT"].series["a"].values
+    assert discovery._n_ft_rows == 2
+    assert len(values) == 2
+    expected = datetime(2024, 3, 4, 10, 0)
+    assert [point.x for point in values] == [
+        expected, expected + timedelta(seconds=1)]
+    assert [ep.unpack_discovery_payload(point.y) for point in values] == [
+        (0, 0b011), (0, 0b111)]
+    legacy = make_alg()
+    legacy.cfg["variant"] = "events_only"
+    legacy._ev_results = [aligned, opposed]
+    legacy._export_charts()
+    legacy_values = legacy.charts["E19B-FT"].series["a"].values
+    assert legacy._n_ft_rows == 1
+    assert len(legacy_values) == 1 and legacy_values[0].x == expected
+    print("PASS discovery export: both arms counted/collision-safe; legacy aligned-only")
+
+
 def test_discovery_modules_are_byte_verified_deployment_sources():
     """Hosted compile and OneDrive restore cover every imported source file."""
     sync = open("d10_sync_compile.py").read()
@@ -1252,6 +1287,72 @@ def test_reapply_validates_complete_committed_source_set_before_restore():
     assert committed_source_set(
         specs, loader=lambda name: blobs[name]) == blobs
     print("PASS reapply guard: complete committed source set validated first")
+
+
+def test_reapply_rolls_back_whole_bundle_on_mid_replace_failure():
+    import os
+    import tempfile
+    from pathlib import Path
+    from d43_reapply_ft import restore_source_set
+    old = {"a.py": b"A='old'\n", "b.py": b"B='old'\n",
+           "c.py": b"C='old'\n"}
+    new = {"a.py": b"A='new'\n", "b.py": b"B='new'\n",
+           "c.py": b"C='new'\n"}
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        for name, data in old.items():
+            (root / name).write_bytes(data)
+        calls = {"n": 0}
+        def fail_second(source, target):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("injected second replace failure")
+            os.replace(source, target)
+        try:
+            restore_source_set(new, root=str(root), replace=fail_second)
+            raise AssertionError("mid-bundle replace failure was swallowed")
+        except OSError as exc:
+            assert "injected second replace failure" in str(exc)
+        assert {name: (root / name).read_bytes() for name in old} == old
+        assert not [p for p in root.iterdir() if p.name.startswith(".")]
+    print("PASS reapply guard: mid-bundle failure rolls every file back")
+
+
+def test_reapply_retains_recovery_backups_when_rollback_fails():
+    import os
+    import tempfile
+    from pathlib import Path
+    import d43_reapply_ft as guard
+    old = {"a.py": b"A='old'\n", "b.py": b"B='old'\n"}
+    new = {"a.py": b"A='new'\n", "b.py": b"B='new'\n"}
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        for name, data in old.items():
+            (root / name).write_bytes(data)
+        real_replace = guard.os.replace
+        calls = {"n": 0}
+        def fail_second_forward(source, target):
+            calls["n"] += 1
+            if calls["n"] == 2:
+                raise OSError("injected forward failure")
+            real_replace(source, target)
+        def fail_rollback(source, target):
+            raise PermissionError("injected rollback failure")
+        guard.os.replace = fail_rollback
+        try:
+            try:
+                guard.restore_source_set(
+                    new, root=str(root), replace=fail_second_forward)
+                raise AssertionError("rollback failure was swallowed")
+            except RuntimeError as exc:
+                assert "backups retained" in str(exc)
+        finally:
+            guard.os.replace = real_replace
+        backups = [p for p in root.iterdir() if "-rollback-" in p.name]
+        assert backups, "rollback failure deleted every recovery backup"
+        assert any(p.read_bytes() == old["a.py"] for p in backups)
+        assert not [p for p in root.iterdir() if "-reapply-" in p.name]
+    print("PASS reapply guard: rollback failure retains recovery backups")
 
 
 def test_discovery_decoder_screens_each_matched_family():
@@ -1383,10 +1484,13 @@ if __name__ == "__main__":
     test_default_predicate_preserves_legacy_experiment_identity()
     test_discovery_predicates_drive_real_reclaim_path()
     test_discovery_export_packs_family_mask_above_ft32()
+    test_discovery_export_includes_opposed_arm_without_changing_legacy_ft32()
     test_discovery_modules_are_byte_verified_deployment_sources()
     test_sync_snapshots_one_stable_multi_file_source_set()
     test_sync_source_reader_preserves_line_ending_bytes()
     test_reapply_validates_complete_committed_source_set_before_restore()
+    test_reapply_rolls_back_whole_bundle_on_mid_replace_failure()
+    test_reapply_retains_recovery_backups_when_rollback_fails()
     test_discovery_decoder_screens_each_matched_family()
     test_discovery_chart_read_polls_and_decodes_exact_declared_count()
     test_preregistration_present()

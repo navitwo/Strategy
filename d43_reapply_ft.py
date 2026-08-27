@@ -1,6 +1,8 @@
-"""Atomically restore the committed FT engine after a OneDrive revert.
+"""Rollback-safe restore of the committed FT source bundle after OneDrive.
 
-The committed Git blob is the source of truth.  After this local restore,
+The committed Git blobs are the source of truth. All replacements are staged
+with original-byte backups and a mid-bundle failure rolls prior files back.
+After this local restore,
 run d10_sync_compile.py; it snapshots outside OneDrive and requires exact
 remote==local bytes before QuantConnect compilation.
 """
@@ -50,30 +52,77 @@ def committed_source_set(targets=TARGETS, loader=None):
     return blobs
 
 
-def main():
-    blobs = committed_source_set()
+def _stage_bytes(root, name, data, purpose):
+    fd, path = tempfile.mkstemp(
+        prefix=f".{name}-{purpose}-", suffix=".py", dir=root)
+    with os.fdopen(fd, "wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+    return path
+
+
+def _read_bytes(path):
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
+def restore_source_set(blobs, root=ROOT, replace=os.replace):
     staged = {}
+    backups = {}
+    existed = {}
+    replaced = []
+    rollback_failed = False
     try:
         for name, committed in blobs.items():
-            fd, temp_path = tempfile.mkstemp(
-                prefix=f".{name}-reapply-", suffix=".py", dir=ROOT)
-            staged[name] = temp_path
-            with os.fdopen(fd, "wb") as handle:
-                handle.write(committed)
-                handle.flush()
-                os.fsync(handle.fileno())
-        for name, temp_path in staged.items():
-            os.replace(temp_path, os.path.join(ROOT, name))
-            staged[name] = None
+            target = os.path.join(root, name)
+            staged[name] = _stage_bytes(root, name, committed, "reapply")
+            existed[name] = os.path.exists(target)
+            backups[name] = (_stage_bytes(
+                root, name, _read_bytes(target), "rollback")
+                if existed[name] else None)
+        try:
+            for name, temp_path in staged.items():
+                replace(temp_path, os.path.join(root, name))
+                staged[name] = None
+                replaced.append(name)
+        except Exception as original:
+            rollback_errors = []
+            for name in reversed(replaced):
+                target = os.path.join(root, name)
+                try:
+                    if existed[name]:
+                        os.replace(backups[name], target)
+                        backups[name] = None
+                    elif os.path.exists(target):
+                        os.unlink(target)
+                except Exception as exc:
+                    rollback_errors.append(f"{name}: {exc}")
+            if rollback_errors:
+                rollback_failed = True
+                raise RuntimeError(
+                    "source restore and rollback both failed; backups retained: "
+                    + "; ".join(rollback_errors)) from original
+            raise
     finally:
         for temp_path in staged.values():
             if temp_path and os.path.exists(temp_path):
                 os.unlink(temp_path)
+        if not rollback_failed:
+            for backup_path in backups.values():
+                if backup_path and os.path.exists(backup_path):
+                    os.unlink(backup_path)
     for name, committed in blobs.items():
-        restored = open(os.path.join(ROOT, name), "rb").read()
+        restored = _read_bytes(os.path.join(root, name))
         assert restored == committed, \
             f"post-reapply {name}: {sha(restored)} != {sha(committed)}"
-        print("atomic reapply verified sha256:", name, sha(restored))
+
+
+def main():
+    blobs = committed_source_set()
+    restore_source_set(blobs)
+    for name, committed in blobs.items():
+        print("atomic reapply verified sha256:", name, sha(committed))
     return 0
 
 
