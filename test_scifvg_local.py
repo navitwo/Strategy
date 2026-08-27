@@ -173,6 +173,7 @@ def make_alg():
     # v2.6 E19B knobs
     a.cfg.setdefault("event_horizons", [120])
     a.cfg.setdefault("counter_bias_arm", False)
+    a.event_predicate_names = ("sweep_reclaim_v1",)
     a.tick = 0.25
     a.point_value = 2.0
     a.slippage_ticks = int(a.cfg["slippage_ticks"])
@@ -891,6 +892,61 @@ def test_ft_screen_prices_same_bar_ambiguity_as_stop():
     print("PASS FT screen: same-bar ambiguity is pessimistic stop-first")
 
 
+def test_ft_screen_reports_maximally_optimistic_ambiguity_bound():
+    """Code 3 must also expose the all-target upper bound, not hide it."""
+    import d44_e19b_ft as ft_driver
+    rows = [{"codes": [code] * 16} for code in (1, 2, 3)]
+    cell = ft_driver.summarize_ft_rows(rows)["T1S0.5"]
+    assert cell["mean_R_per_unit_risked_pessimistic"] == 0.0
+    assert cell["mean_R_per_unit_risked_optimistic"] == 1.0
+    assert cell["p_target_given_decided_pessimistic"] == 1 / 3
+    assert cell["p_target_given_decided_optimistic"] == 2 / 3
+    print("PASS FT screen: ambiguity economics bracketed stop-first..target-first")
+
+
+def test_ft_screen_reports_driftless_barrier_benchmark():
+    """No-overshoot fair-game target probability is S/(T+S)."""
+    import d44_e19b_ft as ft_driver
+    rows = [{"codes": [code] * 16} for code in (1, 2, 3)]
+    cell = ft_driver.summarize_ft_rows(rows)["T1S0.5"]
+    assert cell["martingale_target_probability"] == 1 / 3
+    assert cell["binomial_z_pessimistic_vs_martingale"] == 0.0
+    assert cell["binomial_z_optimistic_vs_martingale"] > 0
+    print("PASS FT screen: driftless no-overshoot barrier benchmark reported")
+
+
+def test_ft32e_committed_bounds_and_martingale_summary():
+    """Committed FT32E rows must reproduce both bounds and benchmark summary."""
+    import d44_e19b_ft as ft_driver
+    rows = []
+    for inst in ("NQ", "ES", "YM", "RTY"):
+        with open(f"e19br_ft_ledger/{inst}_ft.jsonl") as handle:
+            rows.extend(json.loads(line) for line in handle if line.strip())
+    payload = ft_driver.build_screen_payload([], rows)
+    bounds = payload["ambiguity_bounds"]
+    assert bounds["best_pessimistic"]["cell"] == "T2S0.5"
+    assert abs(bounds["best_pessimistic"]["mean_R_per_unit_risked"]
+               - 0.06481481481481481) < 1e-12
+    assert bounds["best_optimistic"]["cell"] == "T1S0.5"
+    assert abs(bounds["best_optimistic"]["mean_R_per_unit_risked"]
+               - 0.1967654986522911) < 1e-12
+    assert bounds["population"] == "decided paths only; undecided paths excluded"
+    assert bounds["is_complete_horizon_upper_bound"] is False
+    mart = payload["martingale_benchmark"]
+    assert abs(mart["mean_abs_binomial_z"] - 1.9172729644540323) < 1e-12
+    assert mart["n_cells_abs_z_gt_1_96"] == 6
+    assert mart["n_cells_abs_z_le_1_96"] == 10
+    assert mart["cells_abs_z_gt_1_96"] == [
+        "T0.5S0.5", "T0.5S1", "T0.5S1.5", "T0.5S2", "T1S1", "T1S1.5"]
+    assert mart["holm_rejections_16_cells"] == [
+        "T0.5S0.5", "T0.5S1", "T0.5S1.5"]
+    assert mart["n_T_ge_1_cells"] == 12
+    assert mart["holm_rejections_T_ge_1_cells"] == []
+    assert mart["ambiguity_robust_raw_rejections"] == []
+    assert mart["proves_conditional_process_is_martingale"] is False
+    print("PASS FT32E: committed ambiguity bounds + martingale summary exact")
+
+
 def test_ft_ledger_required_and_count_reconciled():
     """Any non-empty event study must retrieve a non-empty, exact FT ledger."""
     import d44_e19b_ft as ft_driver
@@ -1023,22 +1079,252 @@ def test_ft_driver_main_uses_created_backtest_id():
     print("PASS FT driver: real main path retrieves created backtest IDs")
 
 
+def test_event_predicate_registry_and_exact_discovery_transport():
+    """Up to ten named predicates share one exact 42-bit discovery payload."""
+    import event_predicates as ep
+    names = ep.resolve_event_predicates(
+        "sweep_reclaim_v1,bias_aligned_v1,shadow_fvg_v1")
+    mask = ep.evaluate_event_predicates(names, {
+        "bias_aligned": True, "shadow_cisd": False,
+        "shadow_fvg": True, "shadow_ifvg": False})
+    assert names == ("sweep_reclaim_v1", "bias_aligned_v1",
+                     "shadow_fvg_v1")
+    assert mask == 0b111
+    packed = ep.pack_discovery_payload(0xDEADBEEF, mask)
+    assert packed < 2 ** 53 and int(float(packed)) == packed
+    assert ep.unpack_discovery_payload(float(packed)) == (0xDEADBEEF, mask)
+    for bad in ("unknown_v1", "sweep_reclaim_v1,sweep_reclaim_v1"):
+        try:
+            ep.resolve_event_predicates(bad)
+            raise AssertionError("bad predicate list accepted")
+        except ValueError as exc:
+            assert str(exc) != "bad predicate list accepted"
+    try:
+        ep.validate_discovery_predicates("discovery_only", ("shadow_fvg_v1",))
+        raise AssertionError("discovery accepted without its base population")
+    except ValueError as exc:
+        assert str(exc) != "discovery accepted without its base population"
+    try:
+        ep.validate_discovery_predicates(
+            "candidate", ("sweep_reclaim_v1", "shadow_fvg_v1"))
+        raise AssertionError("non-default predicates accepted by trading variant")
+    except ValueError as exc:
+        assert str(exc) != "non-default predicates accepted by trading variant"
+    try:
+        ep.validate_discovery_predicates(
+            "events_only", ("sweep_reclaim_v1", "shadow_fvg_v1"))
+        raise AssertionError("multi-predicate legacy export accepted without mask")
+    except ValueError as exc:
+        assert str(exc) != "multi-predicate legacy export accepted without mask"
+    ep.EVENT_PREDICATES["bad_return_v1"] = lambda _: 1
+    try:
+        try:
+            ep.evaluate_event_predicates(("bad_return_v1",), {})
+            raise AssertionError("non-boolean predicate result accepted")
+        except TypeError as exc:
+            assert str(exc) != "non-boolean predicate result accepted"
+    finally:
+        ep.EVENT_PREDICATES.pop("bad_return_v1")
+    assert ep.evaluate_event_predicates(("bias_opposed_v1",), {}) == 0, \
+        "missing classifier field must not create a match"
+    print("PASS event predicates: registry + exact multi-family transport")
+
+
+def test_default_predicate_preserves_legacy_experiment_identity():
+    from scifvg_config import CONFIG_DEFAULTS, canonical_identity_config
+    legacy = dict(CONFIG_DEFAULTS)
+    legacy.pop("event_predicates")
+    configured = dict(CONFIG_DEFAULTS)
+    assert canonical_identity_config(configured) == legacy
+    configured["variant"] = "discovery_only"
+    assert canonical_identity_config(configured)["event_predicates"] == \
+        "sweep_reclaim_v1"
+    configured["event_predicates"] = "sweep_reclaim_v1,shadow_fvg_v1"
+    assert canonical_identity_config(configured)["event_predicates"].endswith(
+        "shadow_fvg_v1")
+    print("PASS event predicates: legacy identity preserved; discovery identified")
+
+
+def test_discovery_predicates_drive_real_reclaim_path():
+    """The consolidator/setup path emits one event carrying its match mask."""
+    a = make_alg()
+    a.camp_start = datetime(2024, 3, 4).date()
+    a.w_start, a.w_end = 9 * 60 + 30, 12 * 60
+    a.cfg["variant"] = "discovery_only"
+    a.cfg["event_horizons"] = [120]
+    a.event_predicate_names = (
+        "sweep_reclaim_v1", "bias_aligned_v1", "shadow_fvg_v1")
+    a.cur_session = a._session_key(datetime(2024, 3, 4, 9, 35))
+    class _C:
+        pass
+    for end, o, h, low, close in (
+            (datetime(2024, 3, 4, 9, 35), 20985, 21006, 20983, 21004),
+            (datetime(2024, 3, 4, 9, 40), 21004, 21005, 20990, 20992)):
+        cb = _C()
+        cb.end_time, cb.open, cb.high, cb.low, cb.close = (
+            end, float(o), float(h), float(low), float(close))
+        a._on_5m_consolidated(cb)
+    assert len(a._ev_candidates) == 1
+    event = a._ev_candidates[0]
+    assert event["event_predicate_mask"] & 0b001
+    assert event["event_predicate_mask"] & 0b010
+    assert event["event_predicate_names"] == list(a.event_predicate_names)
+    print("PASS discovery predicates: real reclaim path carries family mask")
+
+
+def test_discovery_export_packs_family_mask_above_ft32():
+    """One chart point carries FT32 plus ten predicate bits exactly."""
+    import event_predicates as ep
+    a = make_alg()
+    a.cfg["variant"] = "discovery_only"
+    a._ev_results = [{
+        "event_id": "disc-1", "last_reclaim_et": "2024-03-04 10:00:00",
+        "bias_aligned": True, "h_min": 120, "ret_r": 0.0,
+        "risk_dist": 1.0, "shadow_cisd": False, "shadow_fvg": False,
+        "shadow_ifvg": False, "ft": {}, "mfe_r": 0.0, "mae_r": 0.0,
+        "event_predicate_mask": 0b101,
+    }]
+    a._export_charts()
+    value = a.charts["E19B-FT"].series["a"].values[0].y
+    assert ep.unpack_discovery_payload(value) == (0, 0b101)
+    print("PASS discovery export: FT32 + predicate mask exact in float64")
+
+
+def test_discovery_modules_are_byte_verified_deployment_sources():
+    """Hosted compile and OneDrive restore cover every imported source file."""
+    sync = open("d10_sync_compile.py").read()
+    guard = open("d43_reapply_ft.py").read()
+    for name in ("scifvg_main.py", "event_predicates.py", "scifvg_config.py"):
+        assert name in sync, f"sync omits {name}"
+        assert name in guard, f"restore guard omits {name}"
+    for marker in ("validate_discovery_predicates", "canonical_identity_config"):
+        assert marker in sync, f"sync marker guard omits {marker}"
+        assert marker in guard, f"restore marker guard omits {marker}"
+    assert '"main.py"' in sync
+    print("PASS discovery deployment: all imported sources byte-verified")
+
+
+def test_sync_snapshots_one_stable_multi_file_source_set():
+    source = open("d10_sync_compile.py", encoding="utf-8").read()
+    assert 'if __name__ == "__main__":' in source, \
+        "sync module must be import-safe before behavioral testing"
+    from d10_sync_compile import stable_sources
+    versions = {
+        "a.py": iter(("A=1\n", "A=2\n", "A=2\n", "A=2\n")),
+        "b.py": iter(("B=1\n", "B=1\n", "B=2\n", "B=2\n")),
+    }
+    specs = {
+        "remote-a.py": ("a.py", ("A=",), (), 100),
+        "remote-b.py": ("b.py", ("B=",), (), 100),
+    }
+    observed = stable_sources(
+        specs, read_text=lambda path: next(versions[path]),
+        attempts=4, sleep_s=0)
+    assert observed == {"remote-a.py": "A=2\n", "remote-b.py": "B=2\n"}
+    print("PASS discovery deployment: one stable multi-file source set")
+
+
+def test_sync_source_reader_preserves_line_ending_bytes():
+    import os
+    import tempfile
+    from d10_sync_compile import read_exact_text
+    fd, path = tempfile.mkstemp(suffix=".py")
+    try:
+        with os.fdopen(fd, "wb") as handle:
+            handle.write(b"A=1\r\n")
+        assert read_exact_text(path) == "A=1\r\n"
+    finally:
+        if os.path.exists(path):
+            os.unlink(path)
+    print("PASS sync guard: source reader preserves exact line endings")
+
+
+def test_reapply_validates_complete_committed_source_set_before_restore():
+    source = open("d43_reapply_ft.py", encoding="utf-8").read()
+    assert 'if __name__ == "__main__":' in source, \
+        "reapply module must be import-safe before behavioral testing"
+    from d43_reapply_ft import committed_source_set
+    specs = {
+        "a.py": ((b"A=" ,), (), 100),
+        "b.py": ((b"B=" ,), (), 100),
+    }
+    blobs = {"a.py": b"A=1\n", "b.py": b"B=2\n"}
+    assert committed_source_set(
+        specs, loader=lambda name: blobs[name]) == blobs
+    print("PASS reapply guard: complete committed source set validated first")
+
+
+def test_discovery_decoder_screens_each_matched_family():
+    """One exact point is decoded once and summarized into every matched family."""
+    import event_predicates as ep
+    import discovery_screen as ds
+    names = ("sweep_reclaim_v1", "bias_aligned_v1", "shadow_fvg_v1")
+    codes = (0, 1, 2, 3) * 4
+    ft32 = sum(code << (2 * i) for i, code in enumerate(codes))
+    value = ep.pack_discovery_payload(ft32, 0b101)
+    rows = ds.decode_discovery_points(
+        "NQ", [{"x": 123, "y": float(value)}], names)
+    assert rows[0]["codes"] == list(codes)
+    assert rows[0]["matched_event_predicates"] == [names[0], names[2]]
+    by_family = ds.summarize_discovery_rows(rows, names)
+    assert by_family[names[0]]["n_ft_rows"] == 1
+    assert by_family[names[1]]["n_ft_rows"] == 0
+    assert by_family[names[2]]["n_ft_rows"] == 1
+    runtime = {"d_ev_results": "1", "n_ft_rows": "1",
+               "event_predicates": ",".join(names)}
+    ds.validate_discovery_ledger(runtime, rows, names)
+    for bad_runtime, bad_rows in (
+            ({**runtime, "event_predicates": "sweep_reclaim_v1"}, rows),
+            ({**runtime, "n_ft_rows": "2"}, rows + [dict(rows[0])])):
+        try:
+            ds.validate_discovery_ledger(bad_runtime, bad_rows, names)
+            raise AssertionError("invalid discovery ledger accepted")
+        except (AssertionError, ValueError) as exc:
+            assert "invalid discovery ledger accepted" not in str(exc)
+    for bad_mask in (0, 0b1000):
+        bad = ep.pack_discovery_payload(ft32, bad_mask)
+        try:
+            ds.decode_discovery_points(
+                "NQ", [{"x": 124, "y": float(bad)}], names)
+            raise AssertionError(f"invalid discovery mask accepted: {bad_mask:b}")
+        except ValueError as exc:
+            assert "invalid discovery mask accepted" not in str(exc)
+    print("PASS discovery decoder: one run screens every matched family")
+
+
+def test_discovery_chart_read_polls_and_decodes_exact_declared_count():
+    import discovery_screen as ds
+    import event_predicates as ep
+    names = ("sweep_reclaim_v1", "shadow_fvg_v1")
+    packed = ep.pack_discovery_payload(1, 0b11)
+    responses = [
+        {"success": True, "status": "loading"},
+        {"success": True, "chart": {"series": {"a": {"values": [
+            {"x": 100, "y": float(packed)}]}}}},
+    ]
+    calls = []
+    def reader(pid, bid, chart, **kwargs):
+        calls.append((pid, bid, chart, kwargs))
+        return responses.pop(0)
+    rows = ds.discovery_rows_from_chart(
+        "NQ", "bid", 1, names, read_chart=reader, sleep=lambda _: None)
+    assert len(rows) == 1 and rows[0]["event_predicate_mask"] == 0b11
+    assert calls[-1][3] == {"count": 1, "start": 0,
+                            "end": 2147483647}
+    print("PASS discovery pull: loading polled + exact count decoded")
+
+
 
 
 
 def test_floor_params_in_read_list():
     """E19B-R: floor params must be BOTH in the raw read list AND defaults;
     a default without a raw read silently ignores cloud parameters."""
-    import re as _re
-    src = open("scifvg_main.py").read()
-    m = _re.search(r"for p in \(([^)]*)\):", src)
-    read_list = m.group(1)
-    m2 = _re.search(r"defaults = \{(.*?)\}", src, _re.S)
-    defaults = m2.group(1)
+    from scifvg_config import CONFIG_KEYS, CONFIG_DEFAULTS
     for key in ("min_stop_ticks", "floor_atr_frac", "depth_min_bps",
                 "depth_max_bps", "stop_buffer_bps"):
-        assert f'"{key}"' in read_list, f"{key} not readable"
-        assert f'"{key}"' in defaults, f"{key} has no default"
+        assert key in CONFIG_KEYS, f"{key} not readable"
+        assert key in CONFIG_DEFAULTS, f"{key} has no default"
     print("PASS floor params: read-list + defaults consistent")
 
 
@@ -1084,11 +1370,24 @@ if __name__ == "__main__":
     test_ft_series_reuses_existing_global_quota_name()
     test_ft_screen_probability_nondecreasing_in_stop_width()
     test_ft_screen_prices_same_bar_ambiguity_as_stop()
+    test_ft_screen_reports_maximally_optimistic_ambiguity_bound()
+    test_ft_screen_reports_driftless_barrier_benchmark()
+    test_ft32e_committed_bounds_and_martingale_summary()
     test_ft_ledger_required_and_count_reconciled()
     test_ft_ledger_rejects_vacuous_zero_event_export()
     test_ft_monotonicity_rejects_vacuous_cells()
     test_ft_chart_read_polls_and_requests_declared_count()
     test_sync_file_compares_exact_bytes()
     test_ft_driver_main_uses_created_backtest_id()
+    test_event_predicate_registry_and_exact_discovery_transport()
+    test_default_predicate_preserves_legacy_experiment_identity()
+    test_discovery_predicates_drive_real_reclaim_path()
+    test_discovery_export_packs_family_mask_above_ft32()
+    test_discovery_modules_are_byte_verified_deployment_sources()
+    test_sync_snapshots_one_stable_multi_file_source_set()
+    test_sync_source_reader_preserves_line_ending_bytes()
+    test_reapply_validates_complete_committed_source_set_before_restore()
+    test_discovery_decoder_screens_each_matched_family()
+    test_discovery_chart_read_polls_and_decodes_exact_declared_count()
     test_preregistration_present()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")

@@ -69,6 +69,64 @@ geometry is mechanically unfavourable on this population regardless of
 drift sign. This is a property statement about barriers vs excursions, not
 evidence of directional edge, and it cannot rescue any verdict.
 
+## Layer 5 — FT32E ordered first-touch screen (post-closeout, exploratory)
+
+The original first-touch artifact in `6f738fb` is withdrawn. Its replacement,
+`e19br_ft_screen.json` (`VALID_REPLACEMENT_FT32E`), is reconstructed from
+1,121 exact packed rows: NQ 388 / ES 186 / YM 376 / RTY 171. There are 1,121
+unique `(instrument, chart_x)` identities, 124 distinct 16-cell code vectors,
+and exact screen reproduction from all ledgers. The observed patterns include
+paths such as `[2,1,1,1]`, proving stop width affects first-touch resolution.
+
+Same-bar ambiguity is now reported as an explicit **decided-path bound**:
+
+- pessimistic (every code 3 is stop-first): best T2/S0.5 = **+0.064815R**
+  gross per unit risked;
+- maximally optimistic for code 3 (every code 3 is target-first): best
+  T1/S0.5 = **+0.196765R**;
+- neither endpoint clears the campaign's approximately 0.2R round-trip
+  friction reference. The optimistic maximum misses by only 0.003235R, so
+  "far below friction" applies only to the pessimistic result, not this bound.
+
+This bound excludes undecided paths, exactly as
+`p_target_given_decided` does. It is therefore not an upper bound on a complete
+120-minute exit strategy; terminal marks would be required to price unresolved
+paths. The 0.2R reference also varies with instrument and stop distance and is
+not asserted as an exact cost for every cell.
+
+### Idealized martingale benchmark
+
+For an eventual two-sided exit of a driftless martingale with no overshoot and
+admissible optional stopping, the fair-game target probability is
+`p0 = S/(T+S)`. Descriptive iid-binomial comparisons using the pessimistic
+target count reproduce, among others:
+
+| Cell | observed p | p0 | z |
+|---|---:|---:|---:|
+| T1/S0.5 | 0.3351 | 0.3333 | +0.13 |
+| T2/S1 | 0.3244 | 0.3333 | −0.60 |
+| T1.5/S1 | 0.3875 | 0.4000 | −0.83 |
+| T2/S2 | 0.4811 | 0.5000 | −1.12 |
+
+Across all 16 cells mean `|z| = 1.9173`; six raw iid `|z|>1.96` cells are the
+four T0.5 cells plus T1/S1 and T1/S1.5, where close barriers and same-bar
+ambiguity are most acute. None remains a raw rejection uniformly across the
+pessimistic-to-optimistic same-bar ordering interval. Only the first three
+T0.5 cells survive Holm when the pessimistic endpoint alone is used over all
+16. Among the twelve T≥1 cells, none survives Holm. Thus the defensible result
+is that the T≥1 grid provides no multiplicity-adjusted evidence against this
+idealized benchmark—not that twelve cells prove statistical equivalence.
+
+Optional stopping supplies a general theorem **conditional on its model**:
+predictable barrier geometry cannot manufacture positive gross expectation
+from a true martingale when every path is included and unresolved paths are
+marked or closed at the fixed horizon. This finite-horizon screen conditions on
+barrier decision, discards undecided paths, uses 5-minute OHLC ordering, and is
+not cluster-robust. It therefore does not prove that the conditional futures
+process is a martingale and cannot empirically foreclose every stopping rule.
+It does strengthen the negative prior for geometry-only ideas on this liquid
+index-futures population without changing any Campaign 1 primary verdict.
+
 ---
 
 ## Defect disclosure (exactly one)
@@ -144,9 +202,11 @@ clustered resampling and is unaffected by this defect.
   infrastructure, chart-series ledger channel, smoke gate, and regression
   suite. Forking loses or drifts them.
 - Campaign 2 entry conditions, binding before any hypothesis is chosen:
-  1. Screen candidate bracket geometries OFFLINE against the existing
-     3,001-candidate H\* MFE/MAE ledger at zero cloud cost; selection by
-     assertion is prohibited.
+  1. **Satisfied:** the corrected ordered FT32E screen ran over the full 1,121
+     aligned population, reconciled exactly, and found no decided-path geometry
+     clearing the campaign friction reference under either same-bar ambiguity
+     endpoint. Campaign 2 hypothesis selection is now the live decision; no
+     candidate is selected by this closeout.
   2. Fresh pre-registration: no-order event study first; primary definition
      and statistical rule frozen before results; bounded primary estimator
      (fixed trimming rule or ex-ante volatility normalizer, never the
@@ -155,3 +215,32 @@ clustered resampling and is unaffected by this defect.
      sessions < n.
   3. Parameter optimization prohibited unless that event study first
      demonstrates a robust, economically meaningful edge.
+
+### Campaign 2 prior and discovery directions
+
+The proposed overnight-compression/opening-range candidate inherits the same
+liquid index-futures class, 5-minute barrier observation, approximately 0.2R
+friction reference, and the negative geometry evidence above. It is not
+disqualified, but its current form has a poor prior and largely repeats the
+constraint just tested.
+
+Directions that genuinely relax a binding constraint are:
+
+1. longer holding periods, so friction shrinks as a fraction of R;
+2. less-efficient instruments, because the evidence here is specific to
+   liquid index futures;
+3. non-directional structures—relative value, cross-sectional ranking, or
+   volatility—because optional stopping on one martingale price says nothing
+   about those payoff sources.
+
+Before choosing among them, the no-order apparatus is now a pluggable discovery
+harness. `event_predicates.py` classifies the common post-floor sweep/reclaim
+context with up to ten named predicates. `discovery_only` carries a ten-bit
+family mask above the unchanged FT32 vector in one exact 42-bit float64 value;
+`discovery_screen.py` decodes that point once and reconstructs every matched
+family. The legacy `events_only` FT32 transport is unchanged. This supports
+screening five to ten predeclared subfamilies in one four-market development
+pass. It is an admission-predicate bank over the existing reclaim population,
+not yet a general generator for different instruments or relative-value data.
+No discovery export, strategy backtest, optimization, validation, or holdout
+run was performed for this infrastructure change.

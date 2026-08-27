@@ -3,7 +3,11 @@ from AlgorithmImports import *
 from datetime import timedelta
 import hashlib
 import json
-import math
+from event_predicates import (resolve_event_predicates,
+    validate_discovery_predicates, evaluate_event_predicates,
+    pack_discovery_payload)
+from scifvg_config import (FT_CELLS, CONFIG_KEYS, CONFIG_DEFAULTS, FUNNEL_KEYS,
+                           canonical_identity_config)
 
 class ScifvgFeeModel(FeeModel):
     def __init__(self, per_side):
@@ -21,9 +25,6 @@ class TickSlippage:
     def get_slippage_approximation(self, asset, order):
         return float(asset.symbol_properties.minimum_price_variation) * self.ticks
 
-FT_CELLS = [(f"T{t:g}S{s:g}", t, s) for t in (.5, 1, 1.5, 2)
-            for s in (.5, 1, 1.5, 2)]
-
 INSTRUMENT_SPECS = {
     "NQ":  (Futures.Indices.NASDAQ_100_E_MINI,       0.25, 20.0),
     "MNQ": (Futures.Indices.MICRO_NASDAQ_100_E_MINI, 0.25,  2.0),
@@ -32,56 +33,16 @@ INSTRUMENT_SPECS = {
     "RTY": (Futures.Indices.RUSSELL_2000_E_MINI,     0.10, 50.0),
 }
 
-FUNNEL_KEYS = [
-    "sessions", "no_prior_levels", "no_bias", "attempts_used", "excursion_depth_kills", "L_floor_rejects", "S_floor_rejects", "rollover_no_mark",
-    "L_attempts", "L_depth_rejects", "L_no_reclaim", "L_sweep_ok",
-    "L_cisd_ok", "L_cisd_timeout", "L_inv_ok", "L_inv_timeout",
-    "L_submits", "L_fills", "L_size_skips", "L_cancel_expiry",
-    "L_cancel_invalid", "L_cancel_bias", "L_cancel_window", "L_cancel_other",
-    "S_attempts", "S_depth_rejects", "S_no_reclaim", "S_sweep_ok",
-    "S_cisd_ok", "S_cisd_timeout", "S_inv_ok", "S_inv_timeout",
-    "S_submits", "S_fills", "S_size_skips", "S_cancel_expiry",
-    "S_cancel_invalid", "S_cancel_bias", "S_cancel_window", "S_cancel_other",
-    "rollovers", "oco_races", "forced_flattens", "end_flattens", "eod_flattens", "flatten_fills", "untracked_fills", "oco_void_legs", "anomalous_exit_events", "cycles_opened", "atomic_exits",
-]
-
 class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     def initialize(self):
         raw = {}
-        for p in ("instrument", "start_date", "end_date", "run_segment",
-                  "sweep_min_ticks", "sweep_max_ticks", "reclaim_bars",
-                  "cisd_max_bars", "inv_max_bars", "retest_max_bars",
-                  "fvg_min_ticks", "fvg_max_age_bars", "stop_buffer_ticks",
-                  "target_r", "risk_usd", "max_contracts", "slippage_ticks",
-                  "commission_per_side", "window_start_et", "window_end_et",
-                  "invert_on_cisd_bar", "entry_location",
-                  "pivot_lookback", "pivot_right", "max_attempts_per_day",
-                  "stop_mode", "min_stop_ticks", "floor_atr_frac", "entry_mode", "random_entry_prob", "variant",
-                  "event_horizons", "depth_min_bps", "depth_max_bps",
-                  "stop_buffer_bps", "counter_bias_arm"):
+        for p in CONFIG_KEYS:
             v = self.get_parameter(p)
             if v is not None and str(v).strip() != "":
                 raw[p] = v
 
-        defaults = {
-            "instrument": "MNQ", "start_date": "2023-01-03", "end_date": "2025-04-30",
-            "run_segment": "dev", "sweep_min_ticks": 4, "sweep_max_ticks": 96,
-            "reclaim_bars": 3, "cisd_max_bars": 12, "inv_max_bars": 12,
-            "retest_max_bars": 24, "fvg_min_ticks": 4, "fvg_max_age_bars": 60,
-            "stop_buffer_ticks": 4, "target_r": 2.0, "risk_usd": 100.0,
-            "max_contracts": 10, "slippage_ticks": 1, "commission_per_side": 0.50,
-            "window_start_et": "09:30", "window_end_et": "12:00",
-            "invert_on_cisd_bar": 0, "entry_location": "proximal",
-            "pivot_lookback": 3, "pivot_right": 3,
-            "max_attempts_per_day": 1, "stop_mode": "sweep",
-            "entry_mode": "signal", "random_entry_prob": 0.02,
-            "variant": "candidate",
-            "event_horizons": [30, 60, 120, 240],
-            "depth_min_bps": 0.0, "depth_max_bps": 0.0,
-            "stop_buffer_bps": 0.0,
-            "min_stop_ticks": 0.0, "floor_atr_frac": 0.0,
-        }
+        defaults = CONFIG_DEFAULTS
         cfg = {}
         for k, dv in defaults.items():
             rv = raw.get(k)
@@ -94,7 +55,13 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             else:
                 cfg[k] = int(float(rv))
 
-        canon = json.dumps(cfg, sort_keys=True, separators=(",", ":"))
+        self.event_predicate_names = resolve_event_predicates(
+            cfg["event_predicates"])
+        cfg["event_predicates"] = ",".join(self.event_predicate_names)
+        validate_discovery_predicates(cfg["variant"],
+                                      self.event_predicate_names)
+        canon = json.dumps(canonical_identity_config(cfg), sort_keys=True,
+                           separators=(",", ":"))
         self.exp_hash = hashlib.md5(canon.encode()).hexdigest()[:8]
         self._ev_candidates = []
         self._ev_results = []
@@ -477,7 +444,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
     def _try_arm_attempt(self, b, idx, et, skey):
         
-        events_only = (str(self.cfg.get("variant")) == "events_only")
+        events_only = str(self.cfg.get("variant")) in (
+            "events_only", "discovery_only")
         max_att = self.cfg.get("max_attempts_per_day", 1)
         for side, level in ((1, self.pdl), (-1, self.pdh)):
             if not events_only and self.bias != side:
@@ -533,7 +501,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             closed_back = (b["close"] > lvl) if side > 0 else (b["close"] < lvl)
             if closed_back:
                 self._inc(f"{K}_sweep_ok")
-                if str(self.cfg.get("variant")) == "events_only":
+                if str(self.cfg.get("variant")) in (
+                        "events_only", "discovery_only"):
                     buf = self._stop_buffer(b["close"])
                     stop = (s["extreme"] - buf) if side > 0 \
                         else (s["extreme"] + buf)
@@ -544,6 +513,19 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                                 * (self._atr5 or 0))
                     if dist < floor:
                         self._inc(f"{self._sk(side)}_floor_rejects")
+                        self.setup = None
+                        return
+                    labels = self._shadow_labels(s, b)
+                    context = {"side": side,
+                        "bias_aligned": bool(s.get("bias_aligned",
+                                                   self.bias == side)),
+                        "risk_dist": float(dist),
+                        "sweep_depth": abs(float(s["extreme"] - s["level"])),
+                        "reclaim_bars": idx - s["extreme_idx"] + 1,
+                        **labels}
+                    predicate_mask = evaluate_event_predicates(
+                        self.event_predicate_names, context)
+                    if not predicate_mask:
                         self.setup = None
                         return
                     self._ev_seq = getattr(self, "_ev_seq", 0) + 1
@@ -561,7 +543,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         "remaining": set(self.cfg.get(
                             "event_horizons", [120])),
                         "mfe_r": 0.0, "mae_r": 0.0, "ft": {},
-                        **self._shadow_labels(s, b)})
+                        "event_predicate_mask": predicate_mask,
+                        "event_predicate_names": list(
+                            self.event_predicate_names), **labels})
                     self.setup = None
                     return
                 s["stage"] = "CISD"
@@ -966,6 +950,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         "ft": dict(ev.get("ft", {})),
                         "mfe_r": round(ev["mfe_r"], 4),
                         "mae_r": round(ev["mae_r"], 4),
+                        "event_predicate_mask": ev.get(
+                            "event_predicate_mask", 1),
+                        "event_predicate_names": ev.get(
+                            "event_predicate_names", ["sweep_reclaim_v1"]),
                         **{k: ev.get(k) for k in
                            ("shadow_cisd", "shadow_fvg", "shadow_ifvg")}})
                     ev["remaining"].discard(h)
@@ -1356,6 +1344,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     v = e.get("ft", {}).get(k2)
                     c = 0 if v is None else 3 if v == 99 else 1 if v > 0 else 2
                     p |= c << (2 * i2)
+                if str(self.cfg.get("variant")) == "discovery_only":
+                    p = pack_discovery_payload(
+                        p, e.get("event_predicate_mask", 1))
                 x = fx.get(ts_dt, 0); fx[ts_dt] = x + 1
                 fs.add_point(ts_dt + timedelta(seconds=x), float(p))
                 self._n_ft_rows += 1
@@ -1437,6 +1428,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self.RuntimeStatistics["bars_per_session"] = "0"
             self.RuntimeStatistics["tzcheck_ok"] = str(self.tzcheck_ok)
             self.RuntimeStatistics["qty_max_seen"] = str(self.qty_max_seen)
+            self.RuntimeStatistics["event_predicates"] = ",".join(
+                self.event_predicate_names)
             for k6 in ("flatten_fills", "untracked_fills",
                        "late_fill_events", "orphan_entry_fills",
                        "oco_void_legs"):

@@ -1,5 +1,5 @@
 """Run and retrieve the repaired 32-bit E19B-R first-touch export."""
-import sys, os, json, time
+import sys, os, json, time, math
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
@@ -75,20 +75,115 @@ def summarize_ft_rows(rows):
             counts[OUTCOME[int(row["codes"][i])]] += 1
         n_decided = (counts["target-first"] + counts["stop-first"]
                      + counts["ambiguous"])
-        p_target = (counts["target-first"] / n_decided
-                    if n_decided else None)
-        mean_per_risk = ((counts["target-first"] * (target / stop)
-                          - counts["stop-first"] - counts["ambiguous"])
-                         / n_decided
+        target_n = counts["target-first"]
+        stop_n = counts["stop-first"]
+        ambiguous_n = counts["ambiguous"]
+        p_target = target_n / n_decided if n_decided else None
+        p_target_opt = ((target_n + ambiguous_n) / n_decided
+                        if n_decided else None)
+        mean_per_risk = ((target_n * (target / stop)
+                          - stop_n - ambiguous_n) / n_decided
                          if n_decided else None)
+        mean_per_risk_opt = (((target_n + ambiguous_n) * (target / stop)
+                              - stop_n) / n_decided
+                             if n_decided else None)
+        martingale_p = stop / (target + stop)
+        z = ((p_target - martingale_p)
+             / math.sqrt(martingale_p * (1 - martingale_p) / n_decided)
+             if n_decided else None)
+        z_opt = ((p_target_opt - martingale_p)
+                 / math.sqrt(martingale_p * (1 - martingale_p) / n_decided)
+                 if n_decided else None)
         screen[key] = {
             "target_risk_dist": target, "stop_risk_dist": stop,
             "n_ft_rows": len(rows), "n_decided": n_decided,
             **counts,
             "p_target_given_decided": p_target,
             "mean_R_per_unit_risked": mean_per_risk,
+            "p_target_given_decided_pessimistic": p_target,
+            "p_target_given_decided_optimistic": p_target_opt,
+            "mean_R_per_unit_risked_pessimistic": mean_per_risk,
+            "mean_R_per_unit_risked_optimistic": mean_per_risk_opt,
+            "martingale_target_probability": martingale_p,
+            "binomial_z_pessimistic_vs_martingale": z,
+            "binomial_z_optimistic_vs_martingale": z_opt,
+            "binomial_z_ambiguity_interval": [z, z_opt],
+            "idealized_eventual_exit_target_probability": martingale_p,
+            "iid_binomial_z_pessimistic_vs_idealized_eventual_exit": z,
         }
     return screen
+
+
+def holm_rejections(z_cells, alpha=0.05):
+    ranked = sorted((math.erfc(abs(z) / math.sqrt(2)), key)
+                    for key, z in z_cells.items())
+    rejected = []
+    for i, (p_value, key) in enumerate(ranked):
+        if p_value > alpha / (len(ranked) - i):
+            break
+        rejected.append(key)
+    return rejected
+
+
+def build_screen_payload(results, rows):
+    screen = summarize_ft_rows(rows)
+    assert_stop_monotonic(screen)
+    best_pess = max(screen, key=lambda k:
+                    screen[k]["mean_R_per_unit_risked_pessimistic"])
+    best_opt = max(screen, key=lambda k:
+                   screen[k]["mean_R_per_unit_risked_optimistic"])
+    z_cells = {key: cell["binomial_z_pessimistic_vs_martingale"]
+               for key, cell in screen.items()}
+    exceed = [key for key, z in z_cells.items() if abs(z) > 1.96]
+    robust = [key for key, cell in screen.items()
+              if (cell["binomial_z_pessimistic_vs_martingale"] > 1.96
+                  or cell["binomial_z_optimistic_vs_martingale"] < -1.96)]
+    t_ge_1 = {key: z for key, z in z_cells.items()
+              if screen[key]["target_risk_dist"] >= 1.0}
+    return {
+        "status": f"VALID_REPLACEMENT_{REV}",
+        "encoding": "uint32: 2 bits/cell; 0 undecided, 1 target, 2 stop, 3 ambiguous",
+        "ambiguity_policy": "reported as bounds: pessimistic stop-first through maximally optimistic target-first",
+        "runs": [{"instrument": r["inst"], "backtest_id": r["bid"],
+                  "n_ft_rows": r["n_ft_rows_retrieved"]}
+                 for r in results],
+        "ambiguity_bounds": {
+            "population": "decided paths only; undecided paths excluded",
+            "is_complete_horizon_upper_bound": False,
+            "round_trip_friction_reference_R": 0.2,
+            "round_trip_friction_reference_qualifier": "approximately; observed campaign reference",
+            "best_pessimistic": {
+                "cell": best_pess,
+                "mean_R_per_unit_risked": screen[best_pess][
+                    "mean_R_per_unit_risked_pessimistic"]},
+            "best_optimistic": {
+                "cell": best_opt,
+                "mean_R_per_unit_risked": screen[best_opt][
+                    "mean_R_per_unit_risked_optimistic"]},
+            "any_decided_cell_clears_friction_under_either_bound": any(
+                cell["mean_R_per_unit_risked_optimistic"] >= 0.2
+                for cell in screen.values())},
+        "martingale_benchmark": {
+            "formula": "p_target=S/(T+S)",
+            "assumptions": ["driftless martingale", "no barrier overshoot",
+                            "almost-sure eventual barrier decision",
+                            "admissible optional-stopping conditions"],
+            "formula_scope": "idealized eventual two-sided exit; not generally the conditional hit-by-120m probability when undecided paths are discarded",
+            "z_definition": "descriptive iid-binomial score using pessimistic target count",
+            "mean_abs_binomial_z": sum(abs(z) for z in z_cells.values())
+                                   / len(z_cells),
+            "n_cells_abs_z_gt_1_96": len(exceed),
+            "n_cells_abs_z_le_1_96": len(z_cells) - len(exceed),
+            "cells_abs_z_gt_1_96": exceed,
+            "ambiguity_robust_raw_rejections": robust,
+            "holm_rejections_16_cells": holm_rejections(z_cells),
+            "n_T_ge_1_cells": len(t_ge_1),
+            "holm_rejections_T_ge_1_cells": holm_rejections(t_ge_1),
+            "proves_conditional_process_is_martingale": False,
+            "scope_limit": "not cluster-robust; non-rejection is not equivalence and does not prove the conditional price process is a martingale or exclude every stopping rule empirically",
+        },
+        "cells": screen,
+    }
 
 
 def assert_stop_monotonic(screen, tol=1e-12):
@@ -158,17 +253,10 @@ def main():
             print(inst, bt.get("status"), "| att:", atts,
                   "| ev:", rt.get("d_ev_results"),
                   "| ft:", len(rows), flush=True)
-    screen = summarize_ft_rows(all_rows)
-    assert_stop_monotonic(screen)
+    payload = build_screen_payload(results, all_rows)
     with open("e19br_ft_screen.json", "w", encoding="utf-8",
               newline="\n") as handle:
-        json.dump({"status": f"VALID_REPLACEMENT_{REV}", "encoding":
-                   "uint32: 2 bits/cell; 0 undecided, 1 target, 2 stop, 3 ambiguous",
-                   "ambiguity_policy": "pessimistic stop-first in p and mean_R",
-                   "runs": [{"instrument": r["inst"], "backtest_id": r["bid"],
-                             "n_ft_rows": r["n_ft_rows_retrieved"]}
-                            for r in results],
-                   "cells": screen}, handle, indent=2, sort_keys=True)
+        json.dump(payload, handle, indent=2, sort_keys=True)
         handle.write("\n")
     print("ALL MARKETS DONE", flush=True)
 

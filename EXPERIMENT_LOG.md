@@ -315,10 +315,26 @@ polls materialization, rejects partial/vacuous pulls, and treats same-bar code
 3 pessimistically as stop-first for both probability and economics.
 
 For each fixed target, `p_target_given_decided` is non-decreasing as the stop
-widens. The only positive gross means per unit risked are T1/S0.5 +0.0054R,
-T1.5/S0.5 +0.0417R, and T2/S0.5 +0.0648R; all other cells are negative.
-The maximum is far below the observed approximately 0.2R round-trip friction,
-so the corrected screen supports no robust, economically meaningful bracket-
-geometry edge. E19B-R remains the unchanged Campaign 1 evidence. No Campaign 2
-hypothesis is selected; selection, optimization, validation, and holdout remain
-blocked.
+widens. Under pessimistic same-bar ordering the only positive gross means per
+unit risked are T1/S0.5 +0.0054R, T1.5/S0.5 +0.0417R, and T2/S0.5 +0.0648R.
+Under maximally optimistic code-3 ordering the best decided-path cell is
+T1/S0.5 +0.196765R, still 0.003235R below the campaign's approximately 0.2R
+round-trip reference. This is a same-bar ambiguity bound conditional on barrier
+decision; undecided paths are excluded and the cost reference is approximate,
+so it is not a complete-horizon upper bound.
+
+The idealized eventual-exit martingale benchmark `p0=S/(T+S)` yields mean
+`|z|=1.9173`. Six raw iid cells exceed 1.96 in absolute value: all four T0.5
+cells and T1/S1, T1/S1.5. Only T0.5/S0.5, T0.5/S1, and T0.5/S1.5 survive Holm
+over 16 at the pessimistic endpoint; no cell is a raw rejection uniformly over
+the pessimistic-to-optimistic ambiguity interval, and none of the twelve T≥1
+cells survives Holm. These are descriptive, non-clustered scores. Optional stopping rules out
+geometry-created expectation only under a true martingale, no-overshoot,
+all-path and admissibility assumptions; this decided-path 5-minute screen does
+not prove those assumptions or empirically exclude every stopping rule.
+
+The corrected screen therefore supports no robust bracket-geometry edge in the
+tested population and satisfies the Campaign 2 process gate. E19B-R remains the
+unchanged Campaign 1 evidence. Hypothesis selection is now live but no Campaign
+2 hypothesis is selected here; strategy backtests, optimization, validation,
+and holdout remain locked.
