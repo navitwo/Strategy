@@ -1,0 +1,221 @@
+{
+  "ambiguity_policy": "pessimistic stop-first in p and mean_R",
+  "cells": {
+    "T0.5S0.5": {
+      "ambiguous": 175,
+      "mean_R_per_unit_risked": -0.1638316920322292,
+      "n_decided": 1117,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.41808415398388543,
+      "stop-first": 475,
+      "stop_risk_dist": 0.5,
+      "target-first": 467,
+      "target_risk_dist": 0.5,
+      "undecided": 4
+    },
+    "T0.5S1": {
+      "ambiguous": 94,
+      "mean_R_per_unit_risked": -0.10646900269541779,
+      "n_decided": 1113,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.5956873315363881,
+      "stop-first": 356,
+      "stop_risk_dist": 1.0,
+      "target-first": 663,
+      "target_risk_dist": 0.5,
+      "undecided": 8
+    },
+    "T0.5S1.5": {
+      "ambiguous": 63,
+      "mean_R_per_unit_risked": -0.07832422586520947,
+      "n_decided": 1098,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.6912568306010929,
+      "stop-first": 276,
+      "stop_risk_dist": 1.5,
+      "target-first": 759,
+      "target_risk_dist": 0.5,
+      "undecided": 23
+    },
+    "T0.5S2": {
+      "ambiguous": 36,
+      "mean_R_per_unit_risked": -0.04050925925925926,
+      "n_decided": 1080,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.7675925925925926,
+      "stop-first": 215,
+      "stop_risk_dist": 2.0,
+      "target-first": 829,
+      "target_risk_dist": 0.5,
+      "undecided": 41
+    },
+    "T1.5S0.5": {
+      "ambiguous": 40,
+      "mean_R_per_unit_risked": 0.041742286751361164,
+      "n_decided": 1102,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.2604355716878403,
+      "stop-first": 775,
+      "stop_risk_dist": 0.5,
+      "target-first": 287,
+      "target_risk_dist": 1.5,
+      "undecided": 19
+    },
+    "T1.5S1": {
+      "ambiguous": 27,
+      "mean_R_per_unit_risked": -0.03133903133903134,
+      "n_decided": 1053,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.38746438746438744,
+      "stop-first": 618,
+      "stop_risk_dist": 1.0,
+      "target-first": 408,
+      "target_risk_dist": 1.5,
+      "undecided": 68
+    },
+    "T1.5S1.5": {
+      "ambiguous": 17,
+      "mean_R_per_unit_risked": -0.04216867469879518,
+      "n_decided": 996,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.4789156626506024,
+      "stop-first": 502,
+      "stop_risk_dist": 1.5,
+      "target-first": 477,
+      "target_risk_dist": 1.5,
+      "undecided": 125
+    },
+    "T1.5S2": {
+      "ambiguous": 13,
+      "mean_R_per_unit_risked": -0.020370370370370372,
+      "n_decided": 945,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.5597883597883598,
+      "stop-first": 403,
+      "stop_risk_dist": 2.0,
+      "target-first": 529,
+      "target_risk_dist": 1.5,
+      "undecided": 176
+    },
+    "T1S0.5": {
+      "ambiguous": 71,
+      "mean_R_per_unit_risked": 0.005390835579514825,
+      "n_decided": 1113,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.33513027852650495,
+      "stop-first": 669,
+      "stop_risk_dist": 0.5,
+      "target-first": 373,
+      "target_risk_dist": 1.0,
+      "undecided": 8
+    },
+    "T1S1": {
+      "ambiguous": 47,
+      "mean_R_per_unit_risked": -0.06284658040665435,
+      "n_decided": 1082,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.4685767097966728,
+      "stop-first": 528,
+      "stop_risk_dist": 1.0,
+      "target-first": 507,
+      "target_risk_dist": 1.0,
+      "undecided": 39
+    },
+    "T1S1.5": {
+      "ambiguous": 29,
+      "mean_R_per_unit_risked": -0.05035054174633526,
+      "n_decided": 1046,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.5697896749521989,
+      "stop-first": 421,
+      "stop_risk_dist": 1.5,
+      "target-first": 596,
+      "target_risk_dist": 1.0,
+      "undecided": 75
+    },
+    "T1S2": {
+      "ambiguous": 20,
+      "mean_R_per_unit_risked": -0.020377733598409543,
+      "n_decided": 1006,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.6530815109343936,
+      "stop-first": 329,
+      "stop_risk_dist": 2.0,
+      "target-first": 657,
+      "target_risk_dist": 1.0,
+      "undecided": 115
+    },
+    "T2S0.5": {
+      "ambiguous": 22,
+      "mean_R_per_unit_risked": 0.06481481481481481,
+      "n_decided": 1080,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.21296296296296297,
+      "stop-first": 828,
+      "stop_risk_dist": 0.5,
+      "target-first": 230,
+      "target_risk_dist": 2.0,
+      "undecided": 41
+    },
+    "T2S1": {
+      "ambiguous": 16,
+      "mean_R_per_unit_risked": -0.026706231454005934,
+      "n_decided": 1011,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.32443125618199803,
+      "stop-first": 667,
+      "stop_risk_dist": 1.0,
+      "target-first": 328,
+      "target_risk_dist": 2.0,
+      "undecided": 110
+    },
+    "T2S1.5": {
+      "ambiguous": 9,
+      "mean_R_per_unit_risked": -0.05472636815920402,
+      "n_decided": 938,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.4051172707889126,
+      "stop-first": 549,
+      "stop_risk_dist": 1.5,
+      "target-first": 380,
+      "target_risk_dist": 2.0,
+      "undecided": 183
+    },
+    "T2S2": {
+      "ambiguous": 8,
+      "mean_R_per_unit_risked": -0.037714285714285714,
+      "n_decided": 875,
+      "n_ft_rows": 1121,
+      "p_target_given_decided": 0.48114285714285715,
+      "stop-first": 446,
+      "stop_risk_dist": 2.0,
+      "target-first": 421,
+      "target_risk_dist": 2.0,
+      "undecided": 246
+    }
+  },
+  "encoding": "uint32: 2 bits/cell; 0 undecided, 1 target, 2 stop, 3 ambiguous",
+  "runs": [
+    {
+      "backtest_id": "119b18721d62e690eff8e9aa10239800",
+      "instrument": "NQ",
+      "n_ft_rows": 388
+    },
+    {
+      "backtest_id": "54f05a0e51ed676db683b20c54d054a4",
+      "instrument": "ES",
+      "n_ft_rows": 186
+    },
+    {
+      "backtest_id": "61cba9dd0860d04d9c05e613702fe5ac",
+      "instrument": "YM",
+      "n_ft_rows": 376
+    },
+    {
+      "backtest_id": "b37e524e23f1b7303d0d065b6ec0eeeb",
+      "instrument": "RTY",
+      "n_ft_rows": 171
+    }
+  ],
+  "status": "VALID_REPLACEMENT_FT32E"
+}

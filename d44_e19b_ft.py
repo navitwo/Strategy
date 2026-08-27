@@ -1,5 +1,5 @@
 """Run and retrieve the repaired 32-bit E19B-R first-touch export."""
-import sys, os, json
+import sys, os, json, time
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
@@ -25,10 +25,22 @@ def decode_ft_value(value):
     return [(packed >> (2 * i)) & 3 for i in range(16)]
 
 
-def ft_rows_from_chart(inst, backtest_id):
-    payload = chart_read(PID, backtest_id, "E19B-FT")
-    series = payload.get("chart", {}).get("series", {}).get("a", {})
-    points = series.get("values", [])
+def ft_rows_from_chart(inst, backtest_id, expected_count):
+    points = []
+    for attempt in range(30):
+        payload = chart_read(PID, backtest_id, "E19B-FT",
+                             count=expected_count, start=0, end=2147483647)
+        status = str(payload.get("status") or "").lower()
+        if payload.get("success") is False and status != "loading":
+            raise RuntimeError(f"chart read failed: {payload.get('errors')}")
+        series = payload.get("chart", {}).get("series", {}).get("a", {})
+        points = series.get("values", [])
+        if len(points) == expected_count:
+            break
+        if attempt < 29:
+            time.sleep(2)
+    assert len(points) == expected_count, \
+        f"FT chart incomplete: expected={expected_count}, got={len(points)}"
     rows = []
     for row_index, point in enumerate(points):
         x = point.get("x") if isinstance(point, dict) else point[0]
@@ -44,11 +56,13 @@ def ft_rows_from_chart(inst, backtest_id):
 
 
 def validate_ft_ledger(runtime, rows):
-    n_events = int(runtime.get("d_ev_results", 0) or 0)
+    assert "d_ev_results" in runtime, "missing d_ev_results RuntimeStatistic"
+    n_events = int(runtime["d_ev_results"])
+    assert n_events > 0, f"non-positive d_ev_results: {n_events}"
     assert "n_ft_rows" in runtime, "missing n_ft_rows RuntimeStatistic"
     declared = int(runtime["n_ft_rows"])
-    if n_events > 0:
-        assert rows, f"d_ev_results={n_events} but FT ledger is empty"
+    assert declared > 0, f"non-positive n_ft_rows: {declared}"
+    assert rows, f"d_ev_results={n_events} but FT ledger is empty"
     assert declared == len(rows), \
         f"FT row mismatch: runtime={declared}, retrieved={len(rows)}"
 
@@ -81,8 +95,9 @@ def assert_stop_monotonic(screen, tol=1e-12):
     for target in TARGETS:
         ps = [screen[f"T{target:g}S{stop:g}"]["p_target_given_decided"]
               for stop in STOPS]
-        decided = [p for p in ps if p is not None]
-        assert all(b + tol >= a for a, b in zip(decided, decided[1:])), \
+        assert all(p is not None for p in ps), \
+            f"vacuous FT cells for target={target:g}: {ps}"
+        assert all(b + tol >= a for a, b in zip(ps, ps[1:])), \
             f"target {target:g}: p_target decreases with wider stop: {ps}"
 
 
@@ -123,7 +138,8 @@ def main():
                 == "completed", f"{inst} did not complete: {bt.get('status')}"
             error = str(bt.get("error") or "")
             assert error in ("", "None"), f"{inst} runtime error: {error}"
-            rows = ft_rows_from_chart(inst, r["backtest_id"])
+            assert "n_ft_rows" in rt, "missing n_ft_rows RuntimeStatistic"
+            rows = ft_rows_from_chart(inst, bid, int(rt["n_ft_rows"]))
             validate_ft_ledger(rt, rows)
             write_jsonl_atomic(
                 os.path.join("e19br_ft_ledger", f"{inst}_ft.jsonl"), rows)
@@ -145,7 +161,7 @@ def main():
     assert_stop_monotonic(screen)
     with open("e19br_ft_screen.json", "w", encoding="utf-8",
               newline="\n") as handle:
-        json.dump({"status": "VALID_REPLACEMENT", "encoding":
+        json.dump({"status": f"VALID_REPLACEMENT_{REV}", "encoding":
                    "uint32: 2 bits/cell; 0 undecided, 1 target, 2 stop, 3 ambiguous",
                    "ambiguity_policy": "pessimistic stop-first in p and mean_R",
                    "runs": [{"instrument": r["inst"], "backtest_id": r["bid"],

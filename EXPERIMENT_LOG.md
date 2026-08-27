@@ -294,3 +294,31 @@ names that series `a`, reusing an already-admitted quota identity; the driver
 reads `E19B-FT/a`. The earlier chart-count and registration-timing hypotheses
 are superseded. FT32D is invalid and is not one of the four required valid
 market exports.
+
+### FT32E corrected first-touch replacement — VALID, NO ECONOMIC EDGE
+
+The withdrawn `6f738fb:e19br_ft_screen.json` remains invalid historical
+evidence. FT32E is a new replacement artifact produced from four development-
+only `events_only=true` exports; no strategy backtest, optimization, validation,
+or holdout run was performed. Cloud identities and exact retrieved counts:
+
+- NQ `119b18721d62e690eff8e9aa10239800`: 388/388 FT rows
+- ES `54f05a0e51ed676db683b20c54d054a4`: 186/186 FT rows
+- YM `61cba9dd0860d04d9c05e613702fe5ac`: 376/376 FT rows
+- RTY `b37e524e23f1b7303d0d065b6ec0eeeb`: 171/171 FT rows
+
+Total aligned H*=120 population: 1,121 rows. Every row carries one exact
+uint32 payload with 2 bits for each of 16 cells; the four non-empty ledgers
+decode one-to-one, and each cloud `n_ft_rows` equals the retrieved row count.
+The driver requests the declared chart count with an explicit time range,
+polls materialization, rejects partial/vacuous pulls, and treats same-bar code
+3 pessimistically as stop-first for both probability and economics.
+
+For each fixed target, `p_target_given_decided` is non-decreasing as the stop
+widens. The only positive gross means per unit risked are T1/S0.5 +0.0054R,
+T1.5/S0.5 +0.0417R, and T2/S0.5 +0.0648R; all other cells are negative.
+The maximum is far below the observed approximately 0.2R round-trip friction,
+so the corrected screen supports no robust, economically meaningful bracket-
+geometry edge. E19B-R remains the unchanged Campaign 1 evidence. No Campaign 2
+hypothesis is selected; selection, optimization, validation, and holdout remain
+blocked.

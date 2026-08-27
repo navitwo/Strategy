@@ -143,7 +143,7 @@ def sync_file(project_id, name, content):
     if name not in remote:
         create_file(project_id, name, content)
         return "created"
-    if (remote[name] or "").strip() != content.strip():
+    if (remote[name] or "") != content:
         update_file(project_id, name, content)
         return "updated"
     return "unchanged"
@@ -238,6 +238,12 @@ def poll_backtest(project_id, backtest_id, max_wait=3600, poll_s=15):
     return {"status": "poll-timeout"}
 
 
-def chart_read(project_id, backtest_id, chart_name):
-    d = request("backtests/chart/read", {"projectId": project_id, "backtestId": backtest_id, "name": chart_name})
+def chart_read(project_id, backtest_id, chart_name, count=None,
+               start=None, end=None):
+    payload = {"projectId": project_id, "backtestId": backtest_id,
+               "name": chart_name}
+    for key, value in (("count", count), ("start", start), ("end", end)):
+        if value is not None:
+            payload[key] = value
+    d = request("backtests/chart/read", payload)
     return d

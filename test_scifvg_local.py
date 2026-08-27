@@ -910,6 +910,81 @@ def test_ft_ledger_required_and_count_reconciled():
     print("PASS FT ledger: non-empty + exact RuntimeStatistic reconciliation")
 
 
+def test_ft_ledger_rejects_vacuous_zero_event_export():
+    import d44_e19b_ft as ft_driver
+    for runtime in ({"d_ev_results": "0", "n_ft_rows": "0"},
+                    {"n_ft_rows": "0"}):
+        try:
+            ft_driver.validate_ft_ledger(runtime, [])
+            raise AssertionError("vacuous FT export was accepted")
+        except AssertionError as exc:
+            assert str(exc) != "vacuous FT export was accepted"
+    print("PASS FT ledger: vacuous zero/missing event counts rejected")
+
+
+def test_ft_monotonicity_rejects_vacuous_cells():
+    import d44_e19b_ft as ft_driver
+    empty = {key: {"p_target_given_decided": None}
+             for key, _, _ in ft_driver.CELLS}
+    try:
+        ft_driver.assert_stop_monotonic(empty)
+        raise AssertionError("all-undecided FT screen was accepted")
+    except AssertionError as exc:
+        assert str(exc) != "all-undecided FT screen was accepted"
+    print("PASS FT screen: vacuous all-undecided cells rejected")
+
+
+def test_ft_chart_read_polls_and_requests_declared_count():
+    import d44_e19b_ft as ft_driver
+    calls = []
+    responses = [
+        {"success": True, "status": "loading"},
+        {"success": True, "chart": {"series": {"a": {"values": [
+            {"x": 100, "y": 1.0}, {"x": 101, "y": 2.0}]}}}},
+    ]
+    old_read, old_time = ft_driver.chart_read, getattr(ft_driver, "time", None)
+    try:
+        def fake_read(pid, bid, name, **kwargs):
+            calls.append((pid, bid, name, kwargs))
+            return responses.pop(0)
+        ft_driver.chart_read = fake_read
+        class FakeTime:
+            sleep = staticmethod(lambda _: None)
+        ft_driver.time = FakeTime
+        try:
+            rows = ft_driver.ft_rows_from_chart("NQ", "bid", 2)
+        except TypeError:
+            rows = None
+    finally:
+        ft_driver.chart_read = old_read
+        if old_time is None:
+            del ft_driver.time
+        else:
+            ft_driver.time = old_time
+    assert rows is not None and len(rows) == 2
+    assert len(calls) == 2
+    assert calls[-1][3] == {"count": 2, "start": 0,
+                            "end": 2147483647}
+    print("PASS FT pull: loading polled + declared count requested")
+
+
+def test_sync_file_compares_exact_bytes():
+    import qc_api
+    old_read, old_update, old_create = (qc_api.read_files, qc_api.update_file,
+                                        qc_api.create_file)
+    updates = []
+    try:
+        qc_api.read_files = lambda _: {"main.py": "same\n"}
+        qc_api.update_file = lambda pid, name, content: updates.append(content)
+        qc_api.create_file = lambda *args: None
+        outcome = qc_api.sync_file(1, "main.py", "same")
+    finally:
+        qc_api.read_files, qc_api.update_file, qc_api.create_file = (
+            old_read, old_update, old_create)
+    assert outcome == "updated" and updates == ["same"]
+    print("PASS sync guard: trailing-byte mismatch forces update")
+
+
 
 
 
@@ -972,5 +1047,9 @@ if __name__ == "__main__":
     test_ft_screen_probability_nondecreasing_in_stop_width()
     test_ft_screen_prices_same_bar_ambiguity_as_stop()
     test_ft_ledger_required_and_count_reconciled()
+    test_ft_ledger_rejects_vacuous_zero_event_export()
+    test_ft_monotonicity_rejects_vacuous_cells()
+    test_ft_chart_read_polls_and_requests_declared_count()
+    test_sync_file_compares_exact_bytes()
     test_preregistration_present()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")
