@@ -985,6 +985,44 @@ def test_sync_file_compares_exact_bytes():
     print("PASS sync guard: trailing-byte mismatch forces update")
 
 
+def test_ft_driver_main_uses_created_backtest_id():
+    """Drive the real launcher path so retrieval cannot reference a stale name."""
+    import d44_e19b_ft as ft_driver
+    import os, tempfile
+    old_cwd = os.getcwd()
+    originals = {name: getattr(ft_driver, name) for name in (
+        "backtest_list", "backtest_create", "poll_backtest",
+        "ft_rows_from_chart")}
+    seen = []
+    tmp = tempfile.TemporaryDirectory()
+    try:
+        os.chdir(tmp.name)
+        open("compile_id.txt", "w").write("compile-test")
+        ft_driver.backtest_list = lambda _: []
+        ft_driver.backtest_create = lambda pid, tag, params, compile_id: {
+            "backtest_id": "bid-" + params["instrument"]}
+        ft_driver.poll_backtest = lambda *args, **kwargs: {
+            "status": "Completed.", "error": None,
+            "runtimeStatistics": {"d_ev_results": "1",
+                                  "n_ft_rows": "1"}}
+        def fake_pull(inst, bid, expected):
+            seen.append((inst, bid, expected))
+            return [{"instrument": inst, "ft_row": 0, "chart_x": 1,
+                     "packed_uint32": 0x55555555, "codes": [1] * 16,
+                     "cells": {key: "target-first"
+                               for key, _, _ in ft_driver.CELLS}}]
+        ft_driver.ft_rows_from_chart = fake_pull
+        ft_driver.main()
+    finally:
+        os.chdir(old_cwd)
+        tmp.cleanup()
+        for name, value in originals.items():
+            setattr(ft_driver, name, value)
+    assert seen == [(inst, "bid-" + inst, 1)
+                    for inst in ("NQ", "ES", "YM", "RTY")]
+    print("PASS FT driver: real main path retrieves created backtest IDs")
+
+
 
 
 
@@ -1051,5 +1089,6 @@ if __name__ == "__main__":
     test_ft_monotonicity_rejects_vacuous_cells()
     test_ft_chart_read_polls_and_requests_declared_count()
     test_sync_file_compares_exact_bytes()
+    test_ft_driver_main_uses_created_backtest_id()
     test_preregistration_present()
     print("ALL LOCAL CHRONOLOGY TESTS PASSED")

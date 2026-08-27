@@ -139,7 +139,8 @@ def main():
             error = str(bt.get("error") or "")
             assert error in ("", "None"), f"{inst} runtime error: {error}"
             assert "n_ft_rows" in rt, "missing n_ft_rows RuntimeStatistic"
-            rows = ft_rows_from_chart(inst, bid, int(rt["n_ft_rows"]))
+            rows = ft_rows_from_chart(
+                inst, r["backtest_id"], int(rt["n_ft_rows"]))
             validate_ft_ledger(rt, rows)
             write_jsonl_atomic(
                 os.path.join("e19br_ft_ledger", f"{inst}_ft.jsonl"), rows)
