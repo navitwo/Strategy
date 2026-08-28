@@ -24,6 +24,9 @@ TARGETS = {
     "scifvg_config.py": ((b"CONFIG_DEFAULTS", b"FT_CELLS",
                           b"FUNNEL_KEYS", b"canonical_identity_config"),
                          (), 64000),
+    "random_time_control.py": ((b"CONTROL_SPEC_SHA256", b"CONTROL_SPECS",
+                                b"pack_random_payload",
+                                b"advance_random_control"), (), 64000),
 }
 
 

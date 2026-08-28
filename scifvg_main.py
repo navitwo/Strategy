@@ -8,6 +8,7 @@ from event_predicates import (resolve_event_predicates,
     pack_discovery_payload)
 from scifvg_config import (FT_CELLS, CONFIG_KEYS, CONFIG_DEFAULTS, FUNNEL_KEYS,
                            canonical_identity_config)
+import random_time_control as rtc
 
 class ScifvgFeeModel(FeeModel):
     def __init__(self, per_side):
@@ -55,11 +56,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             else:
                 cfg[k] = int(float(rv))
 
-        self.event_predicate_names = resolve_event_predicates(
-            cfg["event_predicates"])
-        cfg["event_predicates"] = ",".join(self.event_predicate_names)
-        validate_discovery_predicates(cfg["variant"],
-                                      self.event_predicate_names)
+        if rtc.configure_random_control(cfg):
+            self.event_predicate_names = ()
+        else:
+            self.event_predicate_names = resolve_event_predicates(
+                cfg["event_predicates"])
+            cfg["event_predicates"] = ",".join(self.event_predicate_names)
+            validate_discovery_predicates(cfg["variant"],
+                                          self.event_predicate_names)
         canon = json.dumps(canonical_identity_config(cfg), sort_keys=True,
                            separators=(",", ":"))
         self.exp_hash = hashlib.md5(canon.encode()).hexdigest()[:8]
@@ -120,6 +124,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         eh, em = str(cfg["window_end_et"]).split(":")
         self.w_start = int(wh) * 60 + int(wm)
         self.w_end = int(eh) * 60 + int(em)
+        if rtc.is_random_control(cfg):
+            rtc.initialize_random_control(
+                self, inst, seed=cfg["random_control_seed"])
 
         self.fun = {k: 0 for k in FUNNEL_KEYS}
         self.cur_session = None
@@ -169,9 +176,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.qty_max_seen = 0
 
         self._starting_tpv = None
-        self.Debug(f"SCIFVG init {cfg['instrument']} trade {start}..{end} "
-                   f"warmup_from={ws.isoformat()} win={cfg['window_start_et']}-"
-                   f"{cfg['window_end_et']} hash={self.exp_hash}")
+
 
     def _equity(self):
         try:
@@ -210,7 +215,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return "L" if side > 0 else "S"
 
     def _eod_resolve(self, et, cid):
-        
         side = self.pos_side
         exit_px = getattr(self, "_last_min_close", None) or self.entry_avg
         r_gross_e = ((exit_px - self.entry_avg) / self.risk_dist) * side
@@ -393,7 +397,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self.h4_bucket["tN"] = b5["et"]
 
     def _scan_fvgs(self, upto_idx, side):
-        
         out = []
         lo = max(2, upto_idx - self.cfg["fvg_max_age_bars"])
         m = self.cfg["fvg_min_ticks"] * self.tick
@@ -425,7 +428,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 and self.pdh is not None and self.pdl is not None)
 
     def _depth_thresholds(self, ref_px):
-        
         c = self.cfg
         px = max(float(ref_px), 1e-9)
         bmin = float(c.get("depth_min_bps", 0.0) or 0.0)
@@ -443,7 +445,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return float(self.cfg.get("stop_buffer_ticks", 4)) * self.tick
 
     def _try_arm_attempt(self, b, idx, et, skey):
-        
         events_only = str(self.cfg.get("variant")) in (
             "events_only", "discovery_only")
         max_att = self.cfg.get("max_attempts_per_day", 1)
@@ -790,7 +791,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self._minq = []
 
     def _on_5m_consolidated(self, consolidated):
-        
         et = consolidated.end_time
         if getattr(self, "_starting_tpv", None) is None:
             try:
@@ -856,11 +856,14 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 and self.pos_qty == 0:
             self._manage_pending(agg, agg["idx"], et, skey)
 
-        self._advance_events(agg)
-
+        variant = str(self.cfg.get("variant", "candidate"))
+        if variant != "random_time_control":
+            self._advance_events(agg)
         warm = et.date() >= self.camp_start
-        if str(self.cfg.get("entry_mode", "signal")) == "random":
-            raise RuntimeError("random null retired; use paired variants")
+        if variant == "random_time_control":
+            rtc.advance_random_control(self, agg, warm, self._in_window(et))
+        elif self.cfg.get("entry_mode") == "random":
+            raise RuntimeError("random entry retired")
         elif warm and skey is not None and self._in_window(et) \
                 and self._new_setup_allowed() and self.bias in (1, -1):
             self._try_arm_attempt(agg, agg["idx"], et, skey)
@@ -873,7 +876,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self._cancel_pending(f"{K}_cancel_window")
 
     def _elapsed_min(self, ev, agg):
-        
         try:
             return (agg["ts"] - ev["ts0"]) / 60.0
         except Exception:
@@ -909,7 +911,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 "shadow_ifvg": ifvg}
 
     def _advance_events(self, agg):
-        
         if not self._ev_candidates:
             return
         still = []
@@ -1105,7 +1106,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             elif purpose and purpose[0] in ("stop", "tp"):
                 self.order_purpose.pop(oid, None)
     def _drain_minq(self):
-        
         if self.pos_side == 0:
             self._minq = []
             return
@@ -1115,7 +1115,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                                        self.time)
 
     def _resolve_cycle_minute(self, o, h, l, c, bar_end_et):
-        
         side = self.pos_side
         if side == 0 or self.risk_dist is None or self.entry_avg is None:
             return
@@ -1195,7 +1194,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             pass
 
     def _register_flatten_order(self, ticket, held_qty):
-        
         if ticket is None:
             return
         self.order_purpose[ticket.order_id] = ("flatten", 1 if held_qty < 0 else -1)
@@ -1234,7 +1232,6 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         self._inc("forced_flattens")
 
     def _reconcile_pnl(self):
-        
         out = {"ok": False}
         try:
             tb_trades = list(self.trade_builder.closed_trades)
@@ -1323,29 +1320,33 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
         return out
 
     def _export_charts(self):
-        
         local,fx={},{}
         fc, fs = Chart("E19B-FT"), Series("a", SeriesType.SCATTER)
         fc.add_series(fs)
         self._n_ft_rows=0
+        variant = str(self.cfg.get("variant"))
+        rc = variant == "random_time_control"
         for e in getattr(self, "_ev_results", []):
             cname = f"E19B-h{e['h_min']}"
-            sname = "a" if e.get("bias_aligned") else "o"
+            sname = "a" if e.get("bias_aligned") or rc else "o"
             try:
-                ts_dt = datetime.fromisoformat(e["last_reclaim_et"])
+                ts_dt = datetime.fromisoformat(e["random_selected_et"] if
+                    rc else e["last_reclaim_et"])
             except Exception:
                 continue
             mask = (int(bool(e.get("shadow_cisd")))
                     | int(bool(e.get("shadow_fvg"))) << 1
                     | int(bool(e.get("shadow_ifvg"))) << 2)
             if e["h_min"] == 120 and (sname == "a" or
-                    str(self.cfg.get("variant")) == "discovery_only"):
+                    variant == "discovery_only"):
                 p = 0
                 for i2, (k2, _, _) in enumerate(FT_CELLS):
                     v = e.get("ft", {}).get(k2)
                     c = 0 if v is None else 3 if v == 99 else 1 if v > 0 else 2
                     p |= c << (2 * i2)
-                if str(self.cfg.get("variant")) == "discovery_only":
+                if rc:
+                    p = rtc.pack_event_payload(p, e)
+                elif variant == "discovery_only":
                     p = pack_discovery_payload(
                         p, e.get("event_predicate_mask", 1))
                 x = fx.get(ts_dt, 0); fx[ts_dt] = x + 1
@@ -1376,6 +1377,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             held = self.portfolio[self.fut.mapped].quantity
         except Exception:
             pass
+        if rtc.is_random_control(self.cfg):
+            rtc.finalize_random_control(self)
         self._export_charts()
         try:
             rec = self._reconcile_pnl()
@@ -1431,6 +1434,9 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             self.RuntimeStatistics["qty_max_seen"] = str(self.qty_max_seen)
             self.RuntimeStatistics["event_predicates"] = ",".join(
                 self.event_predicate_names)
+            if rtc.is_random_control(self.cfg):
+                for key, value in rtc.random_control_runtime(self).items():
+                    RT[key] = str(value)
             for k6 in ("flatten_fills", "untracked_fills",
                        "late_fill_events", "orphan_entry_fills",
                        "oco_void_legs"):

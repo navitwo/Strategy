@@ -14,7 +14,7 @@ CONFIG_KEYS = (
     "max_attempts_per_day", "stop_mode", "min_stop_ticks", "floor_atr_frac",
     "entry_mode", "random_entry_prob", "variant", "event_horizons",
     "depth_min_bps", "depth_max_bps", "stop_buffer_bps", "counter_bias_arm",
-    "event_predicates")
+    "event_predicates", "random_control_seed")
 
 CONFIG_DEFAULTS = {
     "instrument": "MNQ", "start_date": "2023-01-03", "end_date": "2025-04-30",
@@ -28,6 +28,7 @@ CONFIG_DEFAULTS = {
     "pivot_lookback": 3, "pivot_right": 3, "max_attempts_per_day": 1,
     "stop_mode": "sweep", "entry_mode": "signal", "random_entry_prob": 0.02,
     "variant": "candidate", "event_predicates": "sweep_reclaim_v1",
+    "random_control_seed": "RTC2-20260827-v1",
     "event_horizons": [30, 60, 120, 240], "depth_min_bps": 0.0,
     "depth_max_bps": 0.0, "stop_buffer_bps": 0.0,
     "min_stop_ticks": 0.0, "floor_atr_frac": 0.0,
@@ -39,6 +40,8 @@ def canonical_identity_config(cfg):
     if (identity.get("event_predicates") == "sweep_reclaim_v1"
             and identity.get("variant") != "discovery_only"):
         identity.pop("event_predicates")
+    if identity.get("variant") != "random_time_control":
+        identity.pop("random_control_seed", None)
     return identity
 
 

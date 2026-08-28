@@ -1,7 +1,9 @@
 """Hash-stable, byte-verified QuantConnect source sync and compile."""
 import ast
 import hashlib
+import json
 import os
+import subprocess
 import sys
 import time
 
@@ -23,6 +25,10 @@ SOURCES = {
                          ("CONFIG_DEFAULTS", "FT_CELLS", "FUNNEL_KEYS",
                           "canonical_identity_config"),
                          (), 64000),
+    "random_time_control.py": ("random_time_control.py",
+                               ("CONTROL_SPEC_SHA256", "CONTROL_SPECS",
+                                "pack_random_payload",
+                                "advance_random_control"), (), 64000),
 }
 
 
@@ -94,6 +100,18 @@ def main():
     with open(os.path.join(ROOT, "compile_id.txt"), "w",
               encoding="utf-8", newline="\n") as handle:
         handle.write(c["compile_id"] + "\n")
+    manifest = {
+        "compile_id": c["compile_id"],
+        "git_head": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT).decode().strip(),
+        "source_sha256": {remote: digest(text)
+                          for remote, text in snaps.items()},
+    }
+    path = os.path.join(ROOT, "compile_manifest.json")
+    with open(path + ".tmp", "w", encoding="utf-8", newline="\n") as handle:
+        json.dump(manifest, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    os.replace(path + ".tmp", path)
     print("compile id saved:", c["compile_id"][:20], "...")
     return 0
 

@@ -1134,6 +1134,7 @@ def test_default_predicate_preserves_legacy_experiment_identity():
     from scifvg_config import CONFIG_DEFAULTS, canonical_identity_config
     legacy = dict(CONFIG_DEFAULTS)
     legacy.pop("event_predicates")
+    legacy.pop("random_control_seed")
     configured = dict(CONFIG_DEFAULTS)
     assert canonical_identity_config(configured) == legacy
     configured["variant"] = "discovery_only"
@@ -1142,6 +1143,10 @@ def test_default_predicate_preserves_legacy_experiment_identity():
     configured["event_predicates"] = "sweep_reclaim_v1,shadow_fvg_v1"
     assert canonical_identity_config(configured)["event_predicates"].endswith(
         "shadow_fvg_v1")
+    random_cfg = dict(CONFIG_DEFAULTS)
+    random_cfg["variant"] = "random_time_control"
+    assert canonical_identity_config(random_cfg)["random_control_seed"] == \
+        "RTC2-20260827-v1"
     print("PASS event predicates: legacy identity preserved; discovery identified")
 
 
@@ -1225,14 +1230,337 @@ def test_discovery_export_includes_opposed_arm_without_changing_legacy_ft32():
     print("PASS discovery export: both arms counted/collision-safe; legacy aligned-only")
 
 
+def test_random_time_control_reservoir_matches_risk_multiset_and_horizon():
+    import random_time_control as rtc
+    a = types.SimpleNamespace(exp_hash="unit-random")
+    specs = tuple({"source_chart_x": 1700000000 + i, "date": date,
+                   "risk_dist": risk} for i, (date, risk) in enumerate((
+                       ("2024-03-04", 1.0), ("2024-03-05", 2.0),
+                       ("2024-03-06", 3.0))))
+    rtc.initialize_random_control(a, "NQ", specs=specs, seed="unit-seed")
+    for day in range(3):
+        start = datetime(2024, 3, 4 + day, 9, 30)
+        for i in range(55):
+            et = start + timedelta(minutes=5 * i)
+            close = 100.0 + 0.1 * i
+            agg = {"et": et, "ts": int(et.timestamp()), "abs": i,
+                   "open": close - 0.05, "high": close + 0.2,
+                   "low": close - 0.2, "close": close}
+            rtc.advance_random_control(
+                a, agg, warm=True,
+                in_window=(9 * 60 + 30 <= et.hour * 60 + et.minute < 12 * 60))
+    rows = rtc.finalize_random_control(a)
+    assert len(rows) == 3
+    assert sorted(row["risk_dist"] for row in rows) == [1.0, 2.0, 3.0]
+    assert all(row["h_min"] == 120 and len(row["ft"]) == 16 for row in rows)
+    assert a._random_control["eligible"] == 90
+    assert a._random_control["started"] == a._random_control["resolved"] == 3
+    print("PASS random-time control: same-date plan + exact risk multiset")
+
+
+def test_random_time_control_matches_source_date_and_exact_horizon_path():
+    import random_time_control as rtc
+    a = type("Algo", (), {})()
+    a.exp_hash = "unit"
+    specs = ({"source_chart_x": 1704193500, "date": "2024-01-02",
+              "risk_dist": 1.25},)
+    state = rtc.initialize_random_control(
+        a, "NQ", specs=specs, seed="paired-unit")
+    planned = state["plans"][0]
+    start = datetime(2024, 1, 2, 9, 30)
+    for i in range(55):
+        et = start + timedelta(minutes=5 * i)
+        ts = int((et - datetime(1970, 1, 1)).total_seconds())
+        agg = {"et": et, "ts": ts, "close": 100 + i / 10,
+               "high": 100.25 + i / 10, "low": 99.75 + i / 10}
+        rtc.advance_random_control(a, agg, True,
+            9 * 60 + 30 <= et.hour * 60 + et.minute < 12 * 60)
+    rows = rtc.finalize_random_control(a)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["date"] == specs[0]["date"]
+    assert row["risk_dist"] == specs[0]["risk_dist"]
+    assert row["random_source_index"] == 0
+    assert row["random_window_index"] == planned["window_index"]
+    assert row["random_path_bars"] == 24
+    assert row["random_resolution_ts"] - row["random_selected_ts"] == 7200
+    assert state["eligible"] == 30
+    print("PASS random-time control: source-date match + exact H120 path")
+
+
+def test_random_time_control_excludes_self_bar_and_rejects_path_gap():
+    import random_time_control as rtc
+    a = types.SimpleNamespace(exp_hash="gap")
+    state = rtc.initialize_random_control(a, "NQ", specs=({
+        "source_chart_x": 1700000000, "date": "2024-01-02",
+        "risk_dist": 1.0},), seed="gap-seed")
+    plan = state["plans"][0]
+    et = datetime(2024, 1, 2, 9, 25)
+    while et.hour * 60 + et.minute <= plan["minute"]:
+        ts = int((et - datetime(1970, 1, 1)).total_seconds())
+        extreme = et.hour * 60 + et.minute == plan["minute"]
+        agg = {"et": et, "ts": ts, "close": 100.0,
+               "high": 1000.0 if extreme else 100.1,
+               "low": 0.0 if extreme else 99.9}
+        rtc.advance_random_control(a, agg, True,
+            9 * 60 + 30 <= et.hour * 60 + et.minute < 12 * 60)
+        et += timedelta(minutes=5)
+    candidate = state["candidates"][0]
+    assert candidate["mfe_r"] == candidate["mae_r"] == 0
+    assert candidate["ft"] == {} and candidate["result"] is None
+    gap_et = et + timedelta(minutes=5)
+    gap = {"et": gap_et,
+           "ts": int((gap_et - datetime(1970, 1, 1)).total_seconds()),
+           "close": 100.0, "high": 100.1, "low": 99.9}
+    try:
+        rtc.advance_random_control(a, gap, True, False)
+        raise AssertionError("random control accepted a ten-minute path gap")
+    except RuntimeError as exc:
+        assert "non-contiguous" in str(exc)
+    print("PASS random-time control: no self-bar lookahead; gaps fail closed")
+
+
+def test_random_time_control_rejects_nonliteral_endpoint_seconds():
+    import random_time_control as rtc
+    a = types.SimpleNamespace(exp_hash="seconds")
+    state = rtc.initialize_random_control(a, "NQ", specs=({
+        "source_chart_x": 1700000000, "date": "2024-01-02",
+        "risk_dist": 1.0},), seed="seconds-seed")
+    plan = state["plans"][0]
+    et = datetime(2024, 1, 2, plan["minute"] // 60,
+                  plan["minute"] % 60, 30)
+    agg = {"et": et, "ts": int((et - datetime(1970, 1, 1)).total_seconds()),
+           "close": 100.0, "high": 100.1, "low": 99.9}
+    try:
+        rtc.advance_random_control(a, agg, True, True)
+        raise AssertionError("random control accepted a second-offset endpoint")
+    except RuntimeError as exc:
+        assert "literal five-minute endpoint" in str(exc)
+    print("PASS random-time control: second-offset endpoints fail closed")
+
+
+def test_random_time_control_sampling_identity_is_et_timezone_invariant():
+    import random_time_control as rtc
+    def simulate(epoch_shift):
+        a = type("Algo", (), {})()
+        a.exp_hash = "unit"
+        rtc.initialize_random_control(a, "NQ", specs=({
+            "source_chart_x": 1700000000, "date": "2024-01-02",
+            "risk_dist": 1.0},), seed="tz")
+        start = datetime(2024, 1, 2, 9, 30)
+        for i in range(55):
+            et = start + timedelta(minutes=5 * i)
+            ts = int((et - datetime(1970, 1, 1)).total_seconds()) + epoch_shift
+            agg = {"et": et, "ts": ts, "close": 100.0 + i / 10,
+                   "high": 100.25 + i / 10, "low": 99.75 + i / 10}
+            rtc.advance_random_control(a, agg, True,
+                9 * 60 + 30 <= et.hour * 60 + et.minute < 12 * 60)
+        return [(row["event_id"], row["last_reclaim_et"], row["side"],
+                 row["risk_dist"], row["ft"])
+                for row in rtc.finalize_random_control(a)]
+    assert simulate(0) == simulate(5 * 3600)
+    print("PASS random-time control: ET identity is host-timezone invariant")
+
+
+def test_random_time_control_drives_real_consolidator_without_orders():
+    import random_time_control as rtc
+    import d45_random_time_control as driver
+    a = make_alg()
+    a.camp_start = datetime(2024, 3, 4).date()
+    a.camp_end = datetime(2024, 3, 4).date()
+    a.w_start, a.w_end = 9 * 60 + 30, 12 * 60
+    a.cfg.update({"variant": "random_time_control", "entry_mode": "signal",
+                  "instrument": "NQ", "start_date": "2024-03-04",
+                  "end_date": "2024-03-04", "run_segment": "dev",
+                  "window_start_et": "09:30", "window_end_et": "12:00"})
+    a.event_predicate_names = ()
+    rtc.initialize_random_control(
+        a, "NQ", specs=({"source_chart_x": 1700000000,
+                          "date": "2024-03-04", "risk_dist": 1.0},),
+        seed="real-path-seed")
+    a.limit_order = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("random-time control placed an order"))
+    a._advance_events = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("random-time control entered legacy event resolver"))
+    class _C:
+        pass
+    start = datetime(2024, 3, 4, 9, 30)
+    for i in range(55):
+        cb = _C()
+        cb.end_time = start + timedelta(minutes=5 * i)
+        cb.close = 100.0 + 0.1 * i
+        cb.open, cb.high, cb.low = cb.close - 0.05, cb.close + 0.2, cb.close - 0.2
+        a._on_5m_consolidated(cb)
+    a.on_end_of_algorithm()
+    assert len(a._ev_results) == 1
+    assert a.event_predicate_names == () and not a.order_purpose
+    assert a._n_ft_rows == 1
+    assert len(a.charts["E19B-FT"].series["a"].values) == 1
+    decoded = rtc.unpack_random_payload(
+        a.charts["E19B-FT"].series["a"].values[0].y)
+    assert decoded["source_index"] == 0 and decoded["path_bars"] == 24
+    assert a.RuntimeStatistics["n_ft_rows"] == "1"
+    for key in driver.ZERO_RUNTIME_KEYS:
+        assert key in a.RuntimeStatistics and int(a.RuntimeStatistics[key]) == 0
+    print("PASS random-time control: real consolidator -> FT32, zero orders")
+
+
+def test_random_time_control_spec_exactly_matches_committed_risk_distribution():
+    import hashlib
+    from datetime import timezone
+    import random_time_control as rtc
+    observed, observed_specs = {}, {}
+    for instrument in ("NQ", "ES", "YM", "RTY"):
+        path = f"e19br_ledgers/{instrument}_events.jsonl"
+        rows = [json.loads(line) for line in open(path, encoding="utf-8")
+                if line.strip()]
+        observed[instrument] = [float(row["risk_dist"]) for row in rows
+            if int(row["h_min"]) == 120 and row["arm"] == "primary"]
+        primary = [row for row in rows
+                   if int(row["h_min"]) == 120 and row["arm"] == "primary"]
+        observed_specs[instrument] = [(
+            int(row["ts"]),
+            datetime.fromtimestamp(int(row["ts"]), timezone.utc).date().isoformat(),
+            float(row["risk_dist"])) for row in primary]
+        assert hashlib.sha256(open(path, "rb").read()).hexdigest() == \
+            rtc.SOURCE_LEDGER_SHA256[instrument]
+    assert observed == {key: list(values)
+                        for key, values in rtc.RISK_DISTS.items()}
+    assert observed_specs == {key: list(values)
+                              for key, values in rtc.CONTROL_SPECS.items()}
+    assert rtc.validate_control_spec()
+    assert rtc.canonical_risk_spec_sha256() == rtc.RISK_SPEC_SHA256
+    assert rtc.canonical_control_spec_sha256() == rtc.CONTROL_SPEC_SHA256
+    print("PASS random-time control: committed risk distribution exact")
+
+
+def test_random_control_driver_fail_closed_and_surface_identity():
+    import d45_random_time_control as driver
+    import random_time_control as rtc
+    source_nq = [json.loads(line) for line in open(
+        "e19br_ft_ledger/NQ_ft.jsonl", encoding="utf-8") if line.strip()]
+    plans = rtc.build_control_plans("NQ", rtc.CONTROL_SPECS["NQ"], rtc.SEED)
+    nq = []
+    for index, (row, plan) in enumerate(zip(source_nq, plans)):
+        nq.append(dict(row, source_index=index, side=plan["side"],
+            path_bars=24, window_index=plan["window_index"],
+            risk_dist=plan["risk_dist"], source_chart_x=plan["source_chart_x"],
+            chart_x=driver.expected_chart_x_values(
+                plan["date"], plan["window_index"])[0]))
+    runtime = {
+        "event_predicates": "", "d_ev_results": "388", "n_ft_rows": "388",
+        "random_control_spec_version": rtc.SPEC_VERSION,
+        "random_control_seed": rtc.SEED,
+        "random_control_risk_sha256": rtc.RISK_SPEC_SHA256,
+        "random_control_spec_sha256": rtc.CONTROL_SPEC_SHA256,
+        "random_control_target": "388", "random_control_eligible": "11640",
+        "random_control_started": "388", "random_control_resolved": "388",
+        "random_control_invalid": "0", "random_control_order_purpose_count": "0",
+        "d_cycles_opened": "0", "d_n_fillevents": "0",
+        "f_L_submits": "0", "f_S_submits": "0", "f_L_fills": "0",
+        "f_S_fills": "0", "f_flatten_fills": "0",
+        "f_forced_flattens": "0", "eod_flattens": "0",
+        "random_control_instrument": "NQ",
+        "random_control_start_date": "2010-01-01",
+        "random_control_end_date": "2024-12-31",
+        "random_control_run_segment": "dev",
+        "random_control_window": "09:30-12:00",
+        "random_control_exp_hash": driver.expected_identity("NQ"),
+    }
+    driver.validate_random_runtime("NQ", runtime, nq)
+    for key, bad in (("event_predicates", "sweep_reclaim_v1"),
+                     ("random_control_invalid", "1"),
+                     ("d_n_fillevents", "1"),
+                     ("random_control_end_date", "2025-01-01")):
+        broken = dict(runtime); broken[key] = bad
+        try:
+            driver.validate_random_runtime("NQ", broken, nq)
+            raise AssertionError(f"random runtime accepted bad {key}")
+        except AssertionError as exc:
+            assert str(exc) != f"random runtime accepted bad {key}"
+    nonmonotone = [dict(row, codes=list(row["codes"])) for row in nq]
+    for row in nonmonotone:
+        row["codes"][0], row["codes"][1] = 1, 2
+    try:
+        driver.validate_random_runtime("NQ", runtime, nonmonotone)
+        raise AssertionError("per-market nonmonotone surface accepted")
+    except AssertionError as exc:
+        assert str(exc) != "per-market nonmonotone surface accepted"
+    rows = []
+    for instrument in ("NQ", "ES", "YM", "RTY"):
+        source = [json.loads(line) for line in open(
+            f"e19br_ft_ledger/{instrument}_ft.jsonl", encoding="utf-8")
+            if line.strip()]
+        market_plans = rtc.build_control_plans(
+            instrument, rtc.CONTROL_SPECS[instrument], rtc.SEED)
+        rows.extend(dict(row, source_index=index, side=plan["side"],
+            path_bars=24, window_index=plan["window_index"],
+            risk_dist=plan["risk_dist"], source_chart_x=plan["source_chart_x"],
+            chart_x=driver.expected_chart_x_values(
+                plan["date"], plan["window_index"])[0])
+            for index, (row, plan) in enumerate(zip(source, market_plans)))
+    sweep = json.load(open("e19br_ft_screen.json", encoding="utf-8"))
+    payload = driver.build_comparison_payload([], rows, sweep)
+    assert payload["surface_comparison"]["max_abs_matched_policy_delta_R"] == 0
+    assert payload["surface_comparison"]["simultaneous_payoff_half_width_R"] == 0
+    assert payload["surface_comparison"]["classification"] == \
+        "INCONCLUSIVE_SURFACE_DIFFERENCE"
+    print("PASS random control driver: gates + ambiguity-conservative comparison")
+
+
+def test_random_control_driver_rejects_off_grid_and_wrong_date_chart_x():
+    import d45_random_time_control as driver
+    values = driver.expected_chart_x_values("2024-01-02", 0)
+    assert len(values) in (1, 2)
+    for value in values:
+        driver.validate_selected_chart_x(value, "2024-01-02", 0)
+    for bad in (min(values) + 17, min(values) + 86400):
+        try:
+            driver.validate_selected_chart_x(bad, "2024-01-02", 0)
+            raise AssertionError("random chart validator accepted bad timestamp")
+        except AssertionError as exc:
+            assert str(exc) != "random chart validator accepted bad timestamp"
+    print("PASS random control driver: exact date/window chart x enforced")
+
+
+def test_random_control_launch_guard_allows_only_compile_id_after_compile():
+    import d45_random_time_control as driver
+    sync = open("d10_sync_compile.py", encoding="utf-8").read()
+    assert driver.launch_status_is_allowed("")
+    assert driver.launch_status_is_allowed(" M compile_id.txt\n")
+    assert driver.launch_status_is_allowed(
+        " M compile_id.txt\n?? compile_manifest.json\n")
+    assert not driver.launch_status_is_allowed(" M scifvg_main.py\n")
+    assert not driver.launch_status_is_allowed("?? unexpected.txt\n")
+    assert "compile_manifest.json" in sync and '"git_head"' in sync
+    assert '"source_sha256"' in sync and '"compile_id"' in sync
+    print("PASS random control driver: post-compile status guard")
+
+
+def test_random_control_comparison_executes_all_three_frozen_branches():
+    import d45_random_time_control as driver
+    zeros = [0.0] * 16
+    assert driver.classify_surface(zeros, zeros, zeros, zeros, .01, .01)[0] == \
+        "SURFACES_EQUIVALENT_WITHIN_PREREGISTERED_TOLERANCES"
+    material_lower = [0.31] + [0.0] * 15
+    assert driver.classify_surface(
+        material_lower, zeros, zeros, zeros, .05, .01)[0] == \
+        "EVENT_SELECTION_SURFACE_DIFFERS_MATERIALLY"
+    assert driver.classify_surface(zeros, zeros, zeros, zeros, .25, .01)[0] == \
+        "INCONCLUSIVE_SURFACE_DIFFERENCE"
+    print("PASS random control driver: material/equivalent/inconclusive branches")
+
+
 def test_discovery_modules_are_byte_verified_deployment_sources():
     """Hosted compile and OneDrive restore cover every imported source file."""
     sync = open("d10_sync_compile.py").read()
     guard = open("d43_reapply_ft.py").read()
-    for name in ("scifvg_main.py", "event_predicates.py", "scifvg_config.py"):
+    for name in ("scifvg_main.py", "event_predicates.py", "scifvg_config.py",
+                 "random_time_control.py"):
         assert name in sync, f"sync omits {name}"
         assert name in guard, f"restore guard omits {name}"
-    for marker in ("validate_discovery_predicates", "canonical_identity_config"):
+    for marker in ("validate_discovery_predicates", "canonical_identity_config",
+                   "CONTROL_SPEC_SHA256"):
         assert marker in sync, f"sync marker guard omits {marker}"
         assert marker in guard, f"restore marker guard omits {marker}"
     assert '"main.py"' in sync
@@ -1485,6 +1813,17 @@ if __name__ == "__main__":
     test_discovery_predicates_drive_real_reclaim_path()
     test_discovery_export_packs_family_mask_above_ft32()
     test_discovery_export_includes_opposed_arm_without_changing_legacy_ft32()
+    test_random_time_control_reservoir_matches_risk_multiset_and_horizon()
+    test_random_time_control_matches_source_date_and_exact_horizon_path()
+    test_random_time_control_excludes_self_bar_and_rejects_path_gap()
+    test_random_time_control_rejects_nonliteral_endpoint_seconds()
+    test_random_time_control_sampling_identity_is_et_timezone_invariant()
+    test_random_time_control_drives_real_consolidator_without_orders()
+    test_random_time_control_spec_exactly_matches_committed_risk_distribution()
+    test_random_control_driver_fail_closed_and_surface_identity()
+    test_random_control_driver_rejects_off_grid_and_wrong_date_chart_x()
+    test_random_control_launch_guard_allows_only_compile_id_after_compile()
+    test_random_control_comparison_executes_all_three_frozen_branches()
     test_discovery_modules_are_byte_verified_deployment_sources()
     test_sync_snapshots_one_stable_multi_file_source_set()
     test_sync_source_reader_preserves_line_ending_bytes()
