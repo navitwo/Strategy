@@ -128,7 +128,11 @@ def gate_side_capture_population(rows):
 
 
 def main():
+    from d45_random_time_control import (assert_preregistered_head,
+                                         validate_compile_manifest)
+    assert_preregistered_head()
     compile_id = open("compile_id.txt", encoding="utf-8").read().strip()
+    validate_compile_manifest(compile_id)
     tags = {f"SIDECAP-FT32-{instrument}" for instrument in INSTRUMENTS}
     existing = {row["name"] for row in backtest_list(PID)}
     duplicates = sorted(tags & existing)
