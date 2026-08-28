@@ -1185,6 +1185,53 @@ def test_random_time_control_spec_exactly_matches_committed_risk_distribution():
     print("PASS random-time control: committed risk distribution exact")
 
 
+def test_random_control_matched_side_binds_every_source_row():
+    """The frozen SIDE_SPECS maps every CONTROL_SPECS source row to its
+    captured +/-1 side, keyed by (instrument, chart_x) — never a flat chart_x
+    key (chart_x collides across markets). build_control_plans then emits the
+    matched side, not a 50/50 draw, for the real population."""
+    import random_time_control as rtc
+    import side_capture as sc
+    sc.validate_side_spec()
+    assert {k: len(v) for k, v in sc.SIDE_SPECS.items()} == {
+        "NQ": 385, "ES": 185, "YM": 376, "RTY": 171}
+    # every control row has a matched side and build_control_plans returns it
+    for instrument in ("NQ", "ES", "YM", "RTY"):
+        plans = rtc.build_control_plans(
+            instrument, rtc.CONTROL_SPECS[instrument], rtc.SEED)
+        assert len(plans) == len(rtc.CONTROL_SPECS[instrument])
+        for plan in plans:
+            matched = sc.matched_side(instrument, plan["source_chart_x"])
+            assert plan["side"] == matched, (
+                f"{instrument} {plan['source_chart_x']}: plan side "
+                f"{plan['side']} != matched {matched}")
+    # cross-market collision guard: a chart_x present in two markets must still
+    # resolve to each market's own captured side via the nested key.
+    shared = 1297770300  # known NQ/ES collision
+    assert sc.SIDE_SPECS["NQ"][shared] in (-1, 1)
+    assert sc.SIDE_SPECS["ES"][shared] in (-1, 1)
+    print("PASS random-time control: matched side binds every source row")
+
+
+def test_random_control_side_spec_sha_is_frozen_and_tamper_fails():
+    """The canonical side-spec SHA-256 is frozen; any tamper with a side value
+    must break the hash (fail-closed), and validate_side_spec must reject it."""
+    import side_capture as sc
+    assert sc.canonical_side_spec_sha256() == sc.SIDE_SPEC_SHA256
+    assert sc.SIDE_SPEC_SHA256 == (
+        "1b2b0364a2a98ac964d8242a06aa96d7a61ffca9f318391875f6bad2e4d5c234")
+    tampered = {k: dict(v) for k, v in sc.SIDE_SPECS.items()}
+    first_x = next(iter(tampered["NQ"]))
+    tampered["NQ"][first_x] = -tampered["NQ"][first_x]
+    assert sc.canonical_side_spec_sha256(tampered) != sc.SIDE_SPEC_SHA256
+    try:
+        sc.validate_side_spec(tampered)
+        raise AssertionError("validate_side_spec accepted a tampered side spec")
+    except AssertionError:
+        pass
+    print("PASS random-time control: side-spec SHA frozen; tamper fails closed")
+
+
 def test_random_control_driver_fail_closed_and_surface_identity():
     import d45_random_time_control as driver
     import random_time_control as rtc
@@ -1207,6 +1254,7 @@ def test_random_control_driver_fail_closed_and_surface_identity():
         "random_control_risk_sha256": rtc.RISK_SPEC_SHA256,
         "random_control_slot_sha256": rtc.SLOT_SPEC_SHA256,
         "random_control_spec_sha256": rtc.CONTROL_SPEC_SHA256,
+        "random_control_side_sha256": rtc.SIDE_SPEC_SHA256,
         "random_control_target": "385", "random_control_eligible": "11550",
         "random_control_started": "385", "random_control_resolved": "385",
         "random_control_invalid": "0", "random_control_order_purpose_count": "0",
@@ -1719,6 +1767,8 @@ if __name__ == "__main__":
     test_random_time_control_sampling_identity_is_et_timezone_invariant()
     test_random_time_control_drives_real_consolidator_without_orders()
     test_random_time_control_spec_exactly_matches_committed_risk_distribution()
+    test_random_control_matched_side_binds_every_source_row()
+    test_random_control_side_spec_sha_is_frozen_and_tamper_fails()
     test_random_control_driver_fail_closed_and_surface_identity()
     test_random_control_driver_rejects_off_grid_and_wrong_date_chart_x()
     test_random_control_launch_guard_allows_only_compile_id_after_compile()

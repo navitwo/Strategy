@@ -1,0 +1,11 @@
+{
+  "compile_id": "8e3dbdfd48db89c889c284ebf6f41d53-23c8519640436c98c3cf5673c6fd0016",
+  "git_head": "c178560318bf552cf7f93d57852f7012efc603a0",
+  "source_sha256": {
+    "event_predicates.py": "93edb6b541cbea02ce64e0d5450868735b971b91b4aba16a53db31a16cd78b21",
+    "main.py": "1fee81740a1057ee50bf65936a9026d85f6c65078b6ae069903cecd32aae5edc",
+    "random_time_control.py": "b05683160876b29f5acf7de667864d1d07dea2a3aa2a5a8720ae69033be1f2c8",
+    "scifvg_config.py": "a878b1108150fb8f8558d0c6c2db0898e33fb2270053834e89159706106aa735",
+    "side_capture.py": "36f9fe21fb86ffb70b2f1a0e7dba6ac153a94dd61798f881eb4c55514897c6cd"
+  }
+}

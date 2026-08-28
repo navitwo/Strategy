@@ -9,6 +9,7 @@ import json
 import math
 
 from scifvg_config import FT_CELLS
+from side_capture import SIDE_SPECS, SIDE_SPEC_SHA256
 
 SPEC_VERSION = "RTC2-SAME-DATE-v1"
 SEED = "RTC2-20260827-v1"
@@ -1183,6 +1184,8 @@ def validate_control_spec(specs=CONTROL_SPECS):
         assert all(isinstance(row[1], str) and len(row[1]) == 10 for row in rows)
         assert all(math.isfinite(float(row[2])) and float(row[2]) > 0
                    for row in rows)
+        # fail-closed: every frozen row must carry a matched captured side
+        assert all(row[0] in SIDE_SPECS[instrument] for row in rows)
     return True
 
 
@@ -1195,6 +1198,7 @@ def configure_random_control(config):
         return False
     config["event_predicates"] = ""
     config["random_control_spec_sha256"] = CONTROL_SPEC_SHA256
+    config["random_control_side_sha256"] = SIDE_SPEC_SHA256
     return True
 
 
@@ -1213,6 +1217,14 @@ def _uniform_index(n, *parts):
         if value < limit:
             return value % n
         counter += 1
+
+
+def _matched_side_or_draw(instrument, source_x, seed):
+    m = SIDE_SPECS.get(str(instrument).upper())
+    if m is not None and int(source_x) in m:
+        return m[int(source_x)]
+    return 1 if _uniform_index(
+        2, SPEC_VERSION, seed, instrument, "side", source_x) == 0 else -1
 
 
 def _slot_from_ts(source_x):
@@ -1257,8 +1269,7 @@ def build_control_plans(instrument, specs, seed):
         window_index = _weighted_index(
             SLOT_COUNTS, excluded, SPEC_VERSION, seed, instrument, "time",
             source_x)
-        side = 1 if _uniform_index(
-            2, SPEC_VERSION, seed, instrument, "side", source_x) == 0 else -1
+        side = _matched_side_or_draw(instrument, source_x, seed)
         plans.append({
             "source_index": source_index, "source_chart_x": source_x,
             "date": date, "risk_dist": risk, "window_index": window_index,
@@ -1452,6 +1463,7 @@ def random_control_runtime(algo):
         "random_control_seed": state["seed"],
         "random_control_risk_sha256": RISK_SPEC_SHA256,
         "random_control_spec_sha256": CONTROL_SPEC_SHA256,
+        "random_control_side_sha256": SIDE_SPEC_SHA256,
         "random_control_slot_sha256": SLOT_SPEC_SHA256,
         "random_control_target": state["target"],
         "random_control_eligible": state["eligible"],

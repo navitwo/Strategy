@@ -21,6 +21,7 @@ from qc_api import backtest_create, backtest_list, chart_read, poll_backtest
 from random_time_control import (CONTROL_SPECS, CONTROL_SPEC_SHA256,
     RISK_SPEC_SHA256, SLOT_SPEC_SHA256, SLOT_COUNTS, SEED, SPEC_VERSION,
     build_control_plans, unpack_random_payload)
+from side_capture import SIDE_SPEC_SHA256
 from scifvg_config import CONFIG_DEFAULTS, canonical_identity_config
 
 PID = 35506697
@@ -53,6 +54,7 @@ def expected_identity(instrument):
     cfg.update(launch_parameters(instrument))
     cfg["event_predicates"] = ""
     cfg["random_control_spec_sha256"] = CONTROL_SPEC_SHA256
+    cfg["random_control_side_sha256"] = SIDE_SPEC_SHA256
     canonical = json.dumps(canonical_identity_config(cfg), sort_keys=True,
                            separators=(",", ":"))
     return hashlib.md5(canonical.encode()).hexdigest()[:8]
@@ -127,6 +129,7 @@ def validate_random_runtime(instrument, runtime, rows):
         "random_control_risk_sha256": RISK_SPEC_SHA256,
         "random_control_slot_sha256": SLOT_SPEC_SHA256,
         "random_control_spec_sha256": CONTROL_SPEC_SHA256,
+        "random_control_side_sha256": SIDE_SPEC_SHA256,
         "random_control_instrument": instrument,
         "random_control_start_date": "2010-01-01",
         "random_control_end_date": "2024-12-31",
@@ -374,6 +377,7 @@ def build_comparison_payload(results, random_rows, sweep_payload,
         "control_spec_sha256": CONTROL_SPEC_SHA256,
         "risk_spec_sha256": RISK_SPEC_SHA256,
         "slot_spec_sha256": SLOT_SPEC_SHA256,
+        "side_spec_sha256": SIDE_SPEC_SHA256,
         "excluded_holiday_sessions": list(EXCLUDED_HOLIDAY_DATES),
         "sampling": ("slot drawn from the empirical E19B-R slot histogram, "
                      "excluding each source event's own slot +/- one bar"),

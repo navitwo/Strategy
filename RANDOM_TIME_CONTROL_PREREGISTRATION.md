@@ -111,8 +111,10 @@ FT32 vector, keeping the total payload below `2^52`.
   completed 09:25–09:30 bar.
 - Both the sweep and the control slot histograms are published in the artifact.
 - SHA-256 rejection sampling, not modulo reduction, maps the frozen seed into
-  the slot and side draws with separate domain labels. The slot draw uses exact
-  weighted rejection sampling over the frozen histogram.
+  the **slot draw only**. The side is NOT drawn: it is matched to each source
+  row's exact captured side from the committed side-capture ledger (see
+  "Captured side" below). Only the slot draw uses exact weighted rejection
+  sampling over the frozen histogram.
 - Frozen root seed: `RTC2-20260827-v1`.
 - Predicate list: `[]` exactly. Any non-empty runtime `event_predicates`
   invalidates the run.
@@ -138,6 +140,10 @@ Frozen counts (after the four-event holiday exclusion):
 
 Canonical market/date/risk control-spec SHA-256:
 `65b05e0f4c3d1d3f40e766b6b20990115c998e8091b759cc15232cbb066a4856`
+
+Canonical captured-side SHA-256 (SIDE_SPECS, nested by instrument then
+`chart_x`; `chart_x` collides across markets so the key is never flat):
+`1b2b0364a2a98ac964d8242a06aa96d7a61ffca9f318391875f6bad2e4d5c234`
 
 Canonical risk-only SHA-256:
 `b1fd70ed4f266b1ea1d11c72edbb947078f7394f18261ec22046de37b3c354e8`
