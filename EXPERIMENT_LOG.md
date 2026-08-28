@@ -338,3 +338,21 @@ tested population and satisfies the Campaign 2 process gate. E19B-R remains the
 unchanged Campaign 1 evidence. Hypothesis selection is now live but no Campaign
 2 hypothesis is selected here; strategy backtests, optimization, validation,
 and holdout remain locked.
+
+
+## RTC2 conformance finding (2026-08-28): holiday-session events in the frozen window
+The E19B-R FT32E population (1,121 events) contains four primary H=120 events
+whose reclaim timestamp falls OUTSIDE the frozen 09:30–12:00 ET window, all on
+US market holidays where the Globex session schedule shifts the window gate:
+2011-02-21 (Presidents Day, NQ), 2018-02-19 (Presidents Day, NQ),
+2022-06-20 (Juneteenth, NQ and ES). The window filter admits these holiday-session
+events (reclaim stamped at 16:05 ET), which is a conformance defect in the frozen
+study, not an RTC2 bookkeeping choice. Resolution: exclude the four events
+symmetrically from BOTH the control population and the sweep side of the paired
+comparison (N 1,121 -> 1,117; NQ 388->385, ES 186->185, YM 376, RTY 171). The
+reduced-row FT32E surface is published as e19br_ft_screen_1117_sensitivity.json
+beside the frozen e19br_ft_screen.json. Per-cell decided-path surface is
+effectively unchanged, but the optimistic best cell moves 0.1968R -> 0.2011R,
+straddling the 0.2R friction reference; the pessimistic best (0.0648R -> 0.0688R)
+stays far below friction. This knife-edge in the optimistic bound is the reason
+the RTC2 economic threshold (theta) is anchored on the pessimistic best cell.

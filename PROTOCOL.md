@@ -43,3 +43,19 @@ Completed 5m bars only; pivots confirmed with right-side bars; PDH/PDL from comp
 
 ## Funnel instrumentation (mandatory output)
 sessions; per side: attempts, depth_rejects, no_reclaim, sweep_ok, cisd_ok/timeout, inv_ok/timeout, submits, fills, size_skips, cancels(expiry/invalid/bias); global: rollovers, oco_races, forced flattens. Emitted via RuntimeStatistics + final FUNNEL log line.
+
+## Decision-rule feasibility proofs (permanent rule, 2026-08-28)
+Every decision rule ships with a feasibility proof showing each outcome label
+is reachable given the observed dispersion, before the rule is frozen. This is
+the positive counterpart of the negative-test rule (a gate that has never been
+seen failing proves nothing): a classifier that can never emit a label is as
+untrustworthy as a gate that can never trip. Five structurally-unreachable
+outcomes have been caught in this project (funnel prefix filter, zero-trade
+smoke gate, tautological Identity 1, E19B's unbounded-ratio estimator, and the
+RTC2 stacked-ambiguity equivalence label); two of the last three were caught by
+this proof rather than by review. The proof is a permanent committed test that
+constructs each label from data already in hand and asserts it is reachable. A
+label reachable only under a synthetic perturbation of an observed quantity
+must state that condition explicitly (e.g. DIFFERS_AND_TRADABLE requires a
+sweep surface whose pessimistic best clears the 0.2R friction threshold, which
+the observed 0.0648R pessimistic best does not).

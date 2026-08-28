@@ -1233,7 +1233,7 @@ def test_discovery_export_includes_opposed_arm_without_changing_legacy_ft32():
 def test_random_time_control_reservoir_matches_risk_multiset_and_horizon():
     import random_time_control as rtc
     a = types.SimpleNamespace(exp_hash="unit-random")
-    specs = tuple({"source_chart_x": 1700000000 + i, "date": date,
+    specs = tuple({"source_chart_x": 1262952300 + i, "date": date,
                    "risk_dist": risk} for i, (date, risk) in enumerate((
                        ("2024-03-04", 1.0), ("2024-03-05", 2.0),
                        ("2024-03-06", 3.0))))
@@ -1262,7 +1262,7 @@ def test_random_time_control_matches_source_date_and_exact_horizon_path():
     import random_time_control as rtc
     a = type("Algo", (), {})()
     a.exp_hash = "unit"
-    specs = ({"source_chart_x": 1704193500, "date": "2024-01-02",
+    specs = ({"source_chart_x": 1262952300, "date": "2024-01-02",
               "risk_dist": 1.25},)
     state = rtc.initialize_random_control(
         a, "NQ", specs=specs, seed="paired-unit")
@@ -1292,7 +1292,7 @@ def test_random_time_control_excludes_self_bar_and_rejects_path_gap():
     import random_time_control as rtc
     a = types.SimpleNamespace(exp_hash="gap")
     state = rtc.initialize_random_control(a, "NQ", specs=({
-        "source_chart_x": 1700000000, "date": "2024-01-02",
+        "source_chart_x": 1262952300, "date": "2024-01-02",
         "risk_dist": 1.0},), seed="gap-seed")
     plan = state["plans"][0]
     et = datetime(2024, 1, 2, 9, 25)
@@ -1324,7 +1324,7 @@ def test_random_time_control_rejects_nonliteral_endpoint_seconds():
     import random_time_control as rtc
     a = types.SimpleNamespace(exp_hash="seconds")
     state = rtc.initialize_random_control(a, "NQ", specs=({
-        "source_chart_x": 1700000000, "date": "2024-01-02",
+        "source_chart_x": 1262952300, "date": "2024-01-02",
         "risk_dist": 1.0},), seed="seconds-seed")
     plan = state["plans"][0]
     et = datetime(2024, 1, 2, plan["minute"] // 60,
@@ -1345,7 +1345,7 @@ def test_random_time_control_sampling_identity_is_et_timezone_invariant():
         a = type("Algo", (), {})()
         a.exp_hash = "unit"
         rtc.initialize_random_control(a, "NQ", specs=({
-            "source_chart_x": 1700000000, "date": "2024-01-02",
+            "source_chart_x": 1262952300, "date": "2024-01-02",
             "risk_dist": 1.0},), seed="tz")
         start = datetime(2024, 1, 2, 9, 30)
         for i in range(55):
@@ -1375,7 +1375,7 @@ def test_random_time_control_drives_real_consolidator_without_orders():
                   "window_start_et": "09:30", "window_end_et": "12:00"})
     a.event_predicate_names = ()
     rtc.initialize_random_control(
-        a, "NQ", specs=({"source_chart_x": 1700000000,
+        a, "NQ", specs=({"source_chart_x": 1262952300,
                           "date": "2024-03-04", "risk_dist": 1.0},),
         seed="real-path-seed")
     a.limit_order = lambda *args, **kwargs: (_ for _ in ()).throw(
@@ -1410,20 +1410,29 @@ def test_random_time_control_spec_exactly_matches_committed_risk_distribution():
     from datetime import timezone
     import random_time_control as rtc
     observed, observed_specs = {}, {}
+    excluded_ts = {1298311500, 1519063500, 1655748300}
+    excluded_count = 0
     for instrument in ("NQ", "ES", "YM", "RTY"):
         path = f"e19br_ledgers/{instrument}_events.jsonl"
         rows = [json.loads(line) for line in open(path, encoding="utf-8")
                 if line.strip()]
         observed[instrument] = [float(row["risk_dist"]) for row in rows
-            if int(row["h_min"]) == 120 and row["arm"] == "primary"]
+            if int(row["h_min"]) == 120 and row["arm"] == "primary"
+            and int(row["ts"]) not in excluded_ts]
         primary = [row for row in rows
-                   if int(row["h_min"]) == 120 and row["arm"] == "primary"]
+                   if int(row["h_min"]) == 120 and row["arm"] == "primary"
+                   and int(row["ts"]) not in excluded_ts]
+        excluded_count += sum(1 for row in rows
+                              if int(row["h_min"]) == 120
+                              and row["arm"] == "primary"
+                              and int(row["ts"]) in excluded_ts)
         observed_specs[instrument] = [(
             int(row["ts"]),
             datetime.fromtimestamp(int(row["ts"]), timezone.utc).date().isoformat(),
             float(row["risk_dist"])) for row in primary]
         assert hashlib.sha256(open(path, "rb").read()).hexdigest() == \
             rtc.SOURCE_LEDGER_SHA256[instrument]
+    assert excluded_count == 4, f"holiday exclusion should drop 4 events: {excluded_count}"
     assert observed == {key: list(values)
                         for key, values in rtc.RISK_DISTS.items()}
     assert observed_specs == {key: list(values)
@@ -1437,8 +1446,10 @@ def test_random_time_control_spec_exactly_matches_committed_risk_distribution():
 def test_random_control_driver_fail_closed_and_surface_identity():
     import d45_random_time_control as driver
     import random_time_control as rtc
+    _hol = {1298311500, 1519063500, 1655748300}
     source_nq = [json.loads(line) for line in open(
-        "e19br_ft_ledger/NQ_ft.jsonl", encoding="utf-8") if line.strip()]
+        "e19br_ft_ledger/NQ_ft.jsonl", encoding="utf-8") if line.strip()
+        if int(json.loads(line)["chart_x"]) not in _hol]
     plans = rtc.build_control_plans("NQ", rtc.CONTROL_SPECS["NQ"], rtc.SEED)
     nq = []
     for index, (row, plan) in enumerate(zip(source_nq, plans)):
@@ -1448,13 +1459,14 @@ def test_random_control_driver_fail_closed_and_surface_identity():
             chart_x=driver.expected_chart_x_values(
                 plan["date"], plan["window_index"])[0]))
     runtime = {
-        "event_predicates": "", "d_ev_results": "388", "n_ft_rows": "388",
+        "event_predicates": "", "d_ev_results": "385", "n_ft_rows": "385",
         "random_control_spec_version": rtc.SPEC_VERSION,
         "random_control_seed": rtc.SEED,
         "random_control_risk_sha256": rtc.RISK_SPEC_SHA256,
+        "random_control_slot_sha256": rtc.SLOT_SPEC_SHA256,
         "random_control_spec_sha256": rtc.CONTROL_SPEC_SHA256,
-        "random_control_target": "388", "random_control_eligible": "11640",
-        "random_control_started": "388", "random_control_resolved": "388",
+        "random_control_target": "385", "random_control_eligible": "11550",
+        "random_control_started": "385", "random_control_resolved": "385",
         "random_control_invalid": "0", "random_control_order_purpose_count": "0",
         "d_cycles_opened": "0", "d_n_fillevents": "0",
         "f_L_submits": "0", "f_S_submits": "0", "f_L_fills": "0",
@@ -1491,6 +1503,7 @@ def test_random_control_driver_fail_closed_and_surface_identity():
         source = [json.loads(line) for line in open(
             f"e19br_ft_ledger/{instrument}_ft.jsonl", encoding="utf-8")
             if line.strip()]
+        source = [row for row in source if int(row["chart_x"]) not in _hol]
         market_plans = rtc.build_control_plans(
             instrument, rtc.CONTROL_SPECS[instrument], rtc.SEED)
         rows.extend(dict(row, source_index=index, side=plan["side"],
@@ -1502,10 +1515,10 @@ def test_random_control_driver_fail_closed_and_surface_identity():
     sweep = json.load(open("e19br_ft_screen.json", encoding="utf-8"))
     payload = driver.build_comparison_payload([], rows, sweep)
     assert payload["surface_comparison"]["max_abs_matched_policy_delta_R"] == 0
-    assert payload["surface_comparison"]["simultaneous_payoff_half_width_R"] == 0
+    assert payload["surface_comparison"]["simultaneous_pessimistic_half_width_R"] == 0
     assert payload["surface_comparison"]["classification"] == \
-        "INCONCLUSIVE_SURFACE_DIFFERENCE"
-    print("PASS random control driver: gates + ambiguity-conservative comparison")
+        "SURFACES_EQUIVALENT_WITHIN_PREREGISTERED_TOLERANCES"
+    print("PASS random control driver: gates + single-convention comparison")
 
 
 def test_random_control_driver_rejects_off_grid_and_wrong_date_chart_x():
@@ -1537,18 +1550,73 @@ def test_random_control_launch_guard_allows_only_compile_id_after_compile():
     print("PASS random control driver: post-compile status guard")
 
 
-def test_random_control_comparison_executes_all_three_frozen_branches():
+def test_random_control_comparison_executes_all_frozen_branches():
     import d45_random_time_control as driver
     zeros = [0.0] * 16
-    assert driver.classify_surface(zeros, zeros, zeros, zeros, .01, .01)[0] == \
+    assert driver.classify_surface(zeros, zeros, zeros, zeros, .05, .01, 0.06)[0] == \
         "SURFACES_EQUIVALENT_WITHIN_PREREGISTERED_TOLERANCES"
-    material_lower = [0.31] + [0.0] * 15
+    material = [0.31] + [0.0] * 15
     assert driver.classify_surface(
-        material_lower, zeros, zeros, zeros, .05, .01)[0] == \
-        "EVENT_SELECTION_SURFACE_DIFFERS_MATERIALLY"
-    assert driver.classify_surface(zeros, zeros, zeros, zeros, .25, .01)[0] == \
+        material, zeros, zeros, zeros, .05, .01, 0.21)[0] == \
+        "EVENT_SELECTION_SURFACE_DIFFERS_AND_TRADABLE"
+    assert driver.classify_surface(
+        material, zeros, zeros, zeros, .05, .01, 0.06)[0] == \
+        "EVENT_SELECTION_SURFACE_DIFFERS_BUT_NULL"
+    assert driver.classify_surface(zeros, zeros, zeros, zeros, .25, .01, 0.06)[0] == \
         "INCONCLUSIVE_SURFACE_DIFFERENCE"
-    print("PASS random control driver: material/equivalent/inconclusive branches")
+    print("PASS random control driver: equivalent/tradable/null/inconclusive")
+
+def test_random_control_decision_rule_labels_reachable_given_observed_dispersion():
+    # Feasibility proof (PROTOCOL rule): every label is reachable given the
+    # observed sweep dispersion. The single-convention pessimistic difference
+    # is a genuine sampling CI (measured ~0.15R upper bound, and smaller still
+    # for a date-matched paired control), so a zero difference sits inside the
+    # +/-0.2R budget -> EQUIVALENT reachable (foreclosed by the old stacked
+    # ambiguity bracket, whose sweep-side width alone was 0.3133R at T0.5/S0.5).
+    # The observed sweep best pessimistic cell (+0.0648R) sits below friction,
+    # so a material difference resolves to DIFFERS_BUT_NULL; DIFFERS_AND_TRADABLE
+    # is reachable only for a sweep surface whose pessimistic best clears 0.2R
+    # (asserted synthetically in the branch test) and is theta-foreclosed here.
+    import random
+    import d45_random_time_control as driver
+    from d44_e19b_ft import summarize_ft_rows
+    from collections import Counter
+    sweep_rows = driver._load_sweep_rows(full=False)
+    screen = summarize_ft_rows(sweep_rows)
+    sweep_best_pess = max(row["mean_R_per_unit_risked_pessimistic"]
+                          for row in screen.values())
+    sweep_best_opt = max(row["mean_R_per_unit_risked_optimistic"]
+                         for row in screen.values())
+    assert sweep_best_pess < driver.FRICTION_R   # theta: NULL branch is real
+    # NOTE: the optimistic sensitivity straddles 0.2R under the 4-event
+    # holiday exclusion (0.1968R full / 0.2011R filtered) -- the exact
+    # knife-edge that motivates anchoring theta on the pessimistic best cell.
+    _ = sweep_best_opt
+    # single-convention band: cluster-bootstrap max-deviation of the pessim
+    # cell-mean vector across session dates (observed dispersion scale). It
+    # must be far inside the 0.4R equivalence budget for EQUIVALENT to be
+    # reachable rather than foreclosed.
+    per_date = {}
+    for row in sweep_rows:
+        date = driver.CONTROL_SPECS[row["instrument"]][row["source_index"]][1]
+        per_date.setdefault(date, []).append(row)
+    dates = list(per_date)
+    rng = random.Random("feasibility-band-probe")
+    def cellmeans(rows_subset):
+        scr = summarize_ft_rows(rows_subset)
+        return [scr[key]["mean_R_per_unit_risked_pessimistic"]
+                for key, _, _ in driver.CELLS]
+    observed = cellmeans(sweep_rows)
+    deviations = []
+    for _ in range(400):
+        sample = []
+        for _date in range(len(dates)):
+            sample.extend(per_date[rng.choice(dates)])
+        boot = cellmeans(sample)
+        deviations.append(max(abs(a - b) for a, b in zip(boot, observed)))
+    band = sorted(deviations)[int(0.975 * len(deviations)) - 1]
+    assert band < driver.FRICTION_R, f"pessimistic band too wide: {band}"
+    print(f"PASS feasibility: band={band:.4f}R, sweep_best={sweep_best_pess:.4f}/{sweep_best_opt:.4f}R")
 
 
 def test_discovery_modules_are_byte_verified_deployment_sources():
@@ -1823,7 +1891,8 @@ if __name__ == "__main__":
     test_random_control_driver_fail_closed_and_surface_identity()
     test_random_control_driver_rejects_off_grid_and_wrong_date_chart_x()
     test_random_control_launch_guard_allows_only_compile_id_after_compile()
-    test_random_control_comparison_executes_all_three_frozen_branches()
+    test_random_control_comparison_executes_all_frozen_branches()
+    test_random_control_decision_rule_labels_reachable_given_observed_dispersion()
     test_discovery_modules_are_byte_verified_deployment_sources()
     test_sync_snapshots_one_stable_multi_file_source_set()
     test_sync_source_reader_preserves_line_ending_bytes()

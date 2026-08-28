@@ -15,6 +15,7 @@ SEED = "RTC2-20260827-v1"
 HORIZON_MINUTES = 120
 WINDOW_START_MINUTE = 9 * 60 + 30
 WINDOW_SLOTS = 30
+TS_SLOT_OFFSET_MINUTE = 690
 CONTROL_SPECS = {
     'NQ': (
         (1262952300, '2010-01-08', 2.8815),
@@ -40,7 +41,6 @@ CONTROL_SPECS = {
         (1295609400, '2011-01-21', 4.4107),
         (1296819600, '2011-02-04', 5.6626),
         (1297770300, '2011-02-15', 6.9167),
-        (1298311500, '2011-02-21', 2.1668),
         (1298982900, '2011-03-01', 3.6635),
         (1301919300, '2011-04-04', 3.9134),
         (1304682000, '2011-05-06', 3.9179),
@@ -227,7 +227,6 @@ CONTROL_SPECS = {
         (1515670200, '2018-01-11', 4.7179),
         (1516801200, '2018-01-24', 13.485),
         (1518093600, '2018-02-08', 14.7079),
-        (1519063500, '2018-02-19', 9.7237),
         (1519217400, '2018-02-21', 10.9785),
         (1519825500, '2018-02-28', 8.2337),
         (1520255100, '2018-03-05', 5.2276),
@@ -340,7 +339,6 @@ CONTROL_SPECS = {
         (1653996600, '2022-05-31', 17.8874),
         (1654169700, '2022-06-02', 66.1255),
         (1655293500, '2022-06-15', 10.8054),
-        (1655748300, '2022-06-20', 4.5475),
         (1656502200, '2022-06-29', 11.5668),
         (1660736400, '2022-08-17', 18.697),
         (1661517300, '2022-08-26', 15.9054),
@@ -535,7 +533,6 @@ CONTROL_SPECS = {
         (1651757400, '2022-05-05', 11.2076),
         (1653309900, '2022-05-23', 5.1973),
         (1653479400, '2022-05-25', 19.4468),
-        (1655748300, '2022-06-20', 3.1856),
         (1658835600, '2022-07-26', 6.6975),
         (1659440400, '2022-08-02', 6.7051),
         (1662463800, '2022-09-06', 11.1967),
@@ -1148,14 +1145,17 @@ CONTROL_SPECS = {
 }
 RISK_DISTS = {key: tuple(row[2] for row in rows)
               for key, rows in CONTROL_SPECS.items()}
+SLOT_COUNTS = (83, 190, 117, 64, 70, 47, 38, 53, 45, 31, 23, 25, 24, 29, 23,
+               30, 24, 20, 20, 18, 20, 8, 18, 10, 15, 11, 19, 12, 19, 11)
 SOURCE_LEDGER_SHA256 = {
     "ES": "6c4e7e0367cda58d31c6387554b97cc22b7931ec004a8a9fe6e251becd59956a",
     "NQ": "914eeec63ed6a0229432d33bbcf4c0d18bc089abbe53e9a884bc24cf169c22e2",
     "RTY": "1d38bc5bd0382f931a5bece4ca396fb17205ed70772032e4a22072b6b9abd9b9",
     "YM": "0fc2d25d582928c8c17da0607dde7d633762d9d176325317ab4f87cc3d46fd84"
 }
-RISK_SPEC_SHA256 = '58a9e24dfda4cba5dd8f3509fc81e7b9a59dd7586b098d76048c04e8dea31239'
-CONTROL_SPEC_SHA256 = 'ffe421865ae846f951eba343c522b7932b57c793e51cc99f7df53af954b2ead1'
+RISK_SPEC_SHA256 = 'b1fd70ed4f266b1ea1d11c72edbb947078f7394f18261ec22046de37b3c354e8'
+SLOT_SPEC_SHA256 = '47f7cf4b862b7de4677ce1d3d385fb9b71e3de36e304a2b75ac1f532c9adee2c'
+CONTROL_SPEC_SHA256 = '65b05e0f4c3d1d3f40e766b6b20990115c998e8091b759cc15232cbb066a4856'
 
 
 def _canonical_sha(value):
@@ -1172,7 +1172,7 @@ def canonical_control_spec_sha256(specs=CONTROL_SPECS):
 
 
 def validate_control_spec(specs=CONTROL_SPECS):
-    expected = {"NQ": 388, "ES": 186, "YM": 376, "RTY": 171}
+    expected = {"NQ": 385, "ES": 185, "YM": 376, "RTY": 171}
     assert {key: len(value) for key, value in specs.items()} == expected
     assert canonical_control_spec_sha256(specs) == CONTROL_SPEC_SHA256
     assert canonical_risk_spec_sha256() == RISK_SPEC_SHA256
@@ -1215,6 +1215,34 @@ def _uniform_index(n, *parts):
         counter += 1
 
 
+def _slot_from_ts(source_x):
+    minute_of_day = (int(source_x) % 86400) // 60
+    slot = (minute_of_day - TS_SLOT_OFFSET_MINUTE) // 5
+    assert 0 <= slot < WINDOW_SLOTS, f"out-of-window source ts {source_x}"
+    return slot
+
+
+def _weighted_index(weights, excluded, *parts):
+    weights = list(weights)
+    assert len(weights) == WINDOW_SLOTS and any(weights)
+    total = sum(weights[i] for i in range(len(weights)) if i not in excluded)
+    assert total > 0
+    width = 1 << 256
+    limit = width - width % total
+    counter = 0
+    while True:
+        value = _digest_int(*parts, counter=counter)
+        if value < limit:
+            roll = value % total
+            acc = 0
+            for i in range(len(weights)):
+                if i not in excluded:
+                    acc += weights[i]
+                    if roll < acc:
+                        return i
+        counter += 1
+
+
 def build_control_plans(instrument, specs, seed):
     plans = []
     for source_index, raw in enumerate(specs):
@@ -1224,14 +1252,18 @@ def build_control_plans(instrument, specs, seed):
             risk = float(raw["risk_dist"])
         else:
             source_x, date, risk = int(raw[0]), str(raw[1]), float(raw[2])
-        window_index = _uniform_index(
-            WINDOW_SLOTS, SPEC_VERSION, seed, instrument, "time", source_x)
+        slot = _slot_from_ts(source_x)
+        excluded = {i for i in (slot - 1, slot, slot + 1) if 0 <= i < WINDOW_SLOTS}
+        window_index = _weighted_index(
+            SLOT_COUNTS, excluded, SPEC_VERSION, seed, instrument, "time",
+            source_x)
         side = 1 if _uniform_index(
             2, SPEC_VERSION, seed, instrument, "side", source_x) == 0 else -1
         plans.append({
             "source_index": source_index, "source_chart_x": source_x,
             "date": date, "risk_dist": risk, "window_index": window_index,
-            "minute": WINDOW_START_MINUTE + 5 * window_index, "side": side,
+            "slot": slot, "minute": WINDOW_START_MINUTE + 5 * window_index,
+            "side": side,
         })
     assert len({p["date"] for p in plans}) == len(plans)
     return plans
@@ -1420,6 +1452,7 @@ def random_control_runtime(algo):
         "random_control_seed": state["seed"],
         "random_control_risk_sha256": RISK_SPEC_SHA256,
         "random_control_spec_sha256": CONTROL_SPEC_SHA256,
+        "random_control_slot_sha256": SLOT_SPEC_SHA256,
         "random_control_target": state["target"],
         "random_control_eligible": state["eligible"],
         "random_control_started": state["started"],

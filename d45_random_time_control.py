@@ -19,13 +19,16 @@ from d44_e19b_ft import (CELLS, OUTCOME, assert_stop_monotonic,
                          build_screen_payload, summarize_ft_rows)
 from qc_api import backtest_create, backtest_list, chart_read, poll_backtest
 from random_time_control import (CONTROL_SPECS, CONTROL_SPEC_SHA256,
-    RISK_SPEC_SHA256, SEED, SPEC_VERSION, build_control_plans,
-    unpack_random_payload)
+    RISK_SPEC_SHA256, SLOT_SPEC_SHA256, SLOT_COUNTS, SEED, SPEC_VERSION,
+    build_control_plans, unpack_random_payload)
 from scifvg_config import CONFIG_DEFAULTS, canonical_identity_config
 
 PID = 35506697
 INSTRUMENTS = ("NQ", "ES", "YM", "RTY")
 EXPECTED_ROWS = {key: len(value) for key, value in CONTROL_SPECS.items()}
+FULL_EXPECTED_ROWS = {"NQ": 388, "ES": 186, "YM": 376, "RTY": 171}
+EXCLUDED_HOLIDAY_TS = {1298311500, 1519063500, 1655748300}
+EXCLUDED_HOLIDAY_DATES = ("2011-02-21", "2018-02-19", "2022-06-20")
 FRICTION_R = 0.2
 RATE_TOLERANCE = 0.05
 BOOTSTRAP_REPS = 2000
@@ -122,6 +125,7 @@ def validate_random_runtime(instrument, runtime, rows):
         "event_predicates": "", "random_control_spec_version": SPEC_VERSION,
         "random_control_seed": SEED,
         "random_control_risk_sha256": RISK_SPEC_SHA256,
+        "random_control_slot_sha256": SLOT_SPEC_SHA256,
         "random_control_spec_sha256": CONTROL_SPEC_SHA256,
         "random_control_instrument": instrument,
         "random_control_start_date": "2010-01-01",
@@ -150,6 +154,9 @@ def validate_random_runtime(instrument, runtime, rows):
         assert row["risk_dist"] == plan["risk_dist"]
         assert row["side"] == plan["side"]
         assert row["window_index"] == plan["window_index"]
+        assert row["window_index"] not in {plan["slot"] - 1, plan["slot"],
+                                            plan["slot"] + 1}, (
+            "random control redrew the source event's own slot +/- 1 bar")
         assert row["path_bars"] == 24
         validate_selected_chart_x(
             row["chart_x"], plan["date"], plan["window_index"])
@@ -161,21 +168,27 @@ def assert_unique_chart_rows(rows):
     assert len(keys) == len(set(keys)), "duplicate (instrument, chart_x) identity"
 
 
-def _load_sweep_rows():
+def _load_sweep_rows(full=True):
+    expected = FULL_EXPECTED_ROWS if full else EXPECTED_ROWS
     rows = []
     for instrument in INSTRUMENTS:
         path = os.path.join("e19br_ft_ledger", f"{instrument}_ft.jsonl")
         with open(path, encoding="utf-8") as handle:
             market = [json.loads(line) for line in handle if line.strip()]
-        assert len(market) == EXPECTED_ROWS[instrument]
+        if not full:
+            market = [row for row in market
+                      if int(row["chart_x"]) not in EXCLUDED_HOLIDAY_TS]
+        assert len(market) == expected[instrument]
         for source_index, row in enumerate(market):
             assert row.get("instrument") == instrument, (
                 f"sweep ledger instrument mismatch: {instrument}")
-            assert int(row["ft_row"]) == source_index, (
-                f"sweep ledger order mismatch: {instrument}")
-            spec = CONTROL_SPECS[instrument][source_index]
-            assert int(row["chart_x"]) == int(spec[0]), (
-                f"sweep chart_x != control spec identity: {instrument}")
+            if full:
+                assert int(row["ft_row"]) == source_index, (
+                    f"sweep ledger order mismatch: {instrument}")
+            else:
+                spec = CONTROL_SPECS[instrument][source_index]
+                assert int(row["chart_x"]) == int(spec[0]), (
+                    f"sweep chart_x != control spec identity: {instrument}")
             codes = row["codes"]
             assert len(codes) == 16 and all(code in (0, 1, 2, 3)
                                             for code in codes)
@@ -218,7 +231,7 @@ def _cell_values(codes, cell_index, target, stop):
 def _surface_vectors(pairs, selected=None):
     if selected is None:
         selected = range(len(pairs))
-    lower, upper, decision, ambiguity = [], [], [], []
+    pess, opt, decision, ambiguity = [], [], [], []
     for cell_index, (_, target, stop) in enumerate(CELLS):
         ep, eo, rp, ro = [], [], [], []
         ed = rd = ea = ra = n = 0
@@ -234,11 +247,11 @@ def _surface_vectors(pairs, selected=None):
             if cp is not None: rp.append(cp)
             if co is not None: ro.append(co)
         assert ep and eo and rp and ro and n
-        lower.append(sum(ep) / len(ep) - sum(ro) / len(ro))
-        upper.append(sum(eo) / len(eo) - sum(rp) / len(rp))
+        pess.append(sum(ep) / len(ep) - sum(rp) / len(rp))
+        opt.append(sum(eo) / len(eo) - sum(ro) / len(ro))
         decision.append(ed / n - rd / n)
         ambiguity.append(ea / n - ra / n)
-    return lower, upper, decision, ambiguity
+    return pess, opt, decision, ambiguity
 
 
 def _quantile(values, probability):
@@ -250,40 +263,44 @@ def _quantile(values, probability):
 
 def _cluster_bands(pairs, observed, reps=BOOTSTRAP_REPS):
     if all(sweep["codes"] == control["codes"] for sweep, control, _ in pairs):
-        return 0.0, 0.0, len({date for _, _, date in pairs})
+        return 0.0, 0.0, 0.0, len({date for _, _, date in pairs})
     clusters = defaultdict(list)
     for index, (_, _, date) in enumerate(pairs):
         clusters[date].append(index)
     dates = sorted(clusters)
     rng = random.Random(BOOTSTRAP_SEED)
-    pay_deviation, rate_deviation = [], []
-    ol, ou, od, oa = observed
+    pess_deviation, opt_deviation, rate_deviation = [], [], []
+    op, oo, od, oa = observed
     for _ in range(int(reps)):
         sample = []
         for date in rng.choices(dates, k=len(dates)):
             sample.extend(clusters[date])
-        bl, bu, bd, ba = _surface_vectors(pairs, sample)
-        pay_deviation.append(max(
-            max(abs(x - y) for x, y in zip(bl, ol)),
-            max(abs(x - y) for x, y in zip(bu, ou))))
+        bp, bo, bd, ba = _surface_vectors(pairs, sample)
+        pess_deviation.append(max(abs(x - y) for x, y in zip(bp, op)))
+        opt_deviation.append(max(abs(x - y) for x, y in zip(bo, oo)))
         rate_deviation.append(max(
             max(abs(x - y) for x, y in zip(bd, od)),
             max(abs(x - y) for x, y in zip(ba, oa))))
-    return (_quantile(pay_deviation, 0.975),
+    return (_quantile(pess_deviation, 0.975),
+            _quantile(opt_deviation, 0.975),
             _quantile(rate_deviation, 0.975), len(dates))
 
 
-def classify_surface(lower, upper, decision, ambiguity, pay_half, rate_half):
+def classify_surface(pess, opt, decision, ambiguity, pess_half, rate_half,
+                    sweep_best_pessimistic):
     equivalent = all(
-        lo - pay_half > -FRICTION_R and hi + pay_half < FRICTION_R
-        for lo, hi in zip(lower, upper)) and all(
+        value - pess_half > -FRICTION_R and value + pess_half < FRICTION_R
+        for value in pess) and all(
         abs(value) + rate_half < RATE_TOLERANCE
         for value in decision + ambiguity)
     material = [CELLS[i][0] for i in range(16)
-                if lower[i] - pay_half > FRICTION_R
-                or upper[i] + pay_half < -FRICTION_R]
+                if pess[i] - pess_half > FRICTION_R
+                or pess[i] + pess_half < -FRICTION_R]
     if material:
-        return "EVENT_SELECTION_SURFACE_DIFFERS_MATERIALLY", material
+        clears = sweep_best_pessimistic > FRICTION_R
+        label = ("EVENT_SELECTION_SURFACE_DIFFERS_AND_TRADABLE" if clears
+                 else "EVENT_SELECTION_SURFACE_DIFFERS_BUT_NULL")
+        return label, material
     if equivalent:
         return "SURFACES_EQUIVALENT_WITHIN_PREREGISTERED_TOLERANCES", []
     return "INCONCLUSIVE_SURFACE_DIFFERENCE", []
@@ -295,8 +312,8 @@ def build_comparison_payload(results, random_rows, sweep_payload,
     assert_unique_chart_rows(random_rows)
     random_by_key = {(row["instrument"], row["source_index"]): row
                      for row in random_rows}
-    sweep_rows = _load_sweep_rows()
-    assert len(random_by_key) == len(sweep_rows) == 1121
+    sweep_rows = _load_sweep_rows(full=False)
+    assert len(random_by_key) == len(sweep_rows) == 1117
     pairs = []
     for sweep in sweep_rows:
         key = (sweep["instrument"], sweep["source_index"])
@@ -310,16 +327,23 @@ def build_comparison_payload(results, random_rows, sweep_payload,
         assert_stop_monotonic(summarize_ft_rows(market_rows))
     random_screen = summarize_ft_rows(random_rows)
     assert_stop_monotonic(random_screen)
+    sweep_screen = summarize_ft_rows(sweep_rows)
+    assert_stop_monotonic(sweep_screen)
     observed = _surface_vectors(pairs)
-    pay_half, rate_half, cluster_count = _cluster_bands(
+    pess_half, opt_half, rate_half, cluster_count = _cluster_bands(
         pairs, observed, bootstrap_reps)
-    lower, upper, decision, ambiguity = observed
+    pess, opt, decision, ambiguity = observed
+    sweep_best_pessimistic = max(sweep_payload["cells"][key][
+        "mean_R_per_unit_risked_pessimistic"] for key, _, _ in CELLS)
+    sweep_best_optimistic = max(sweep_payload["cells"][key][
+        "mean_R_per_unit_risked_optimistic"] for key, _, _ in CELLS)
     classification, material_cells = classify_surface(
-        lower, upper, decision, ambiguity, pay_half, rate_half)
+        pess, opt, decision, ambiguity, pess_half, rate_half,
+        sweep_best_pessimistic)
     cells = {}
     max_abs_delta = 0.0
     for i, (key, _, _) in enumerate(CELLS):
-        sweep, control = sweep_payload["cells"][key], random_screen[key]
+        sweep, control = sweep_screen[key], random_screen[key]
         dp = (sweep["mean_R_per_unit_risked_pessimistic"]
               - control["mean_R_per_unit_risked_pessimistic"])
         do = (sweep["mean_R_per_unit_risked_optimistic"]
@@ -329,11 +353,10 @@ def build_comparison_payload(results, random_rows, sweep_payload,
             "sweep": sweep, "random": control,
             "delta_mean_R_sweep_minus_random_pessimistic": dp,
             "delta_mean_R_sweep_minus_random_optimistic": do,
-            "ambiguity_full_difference_interval_R": [lower[i], upper[i]],
-            "simultaneous_interval_lower_endpoint_R":
-                [lower[i] - pay_half, lower[i] + pay_half],
-            "simultaneous_interval_upper_endpoint_R":
-                [upper[i] - pay_half, upper[i] + pay_half],
+            "simultaneous_pessimistic_difference_interval_R":
+                [pess[i] - pess_half, pess[i] + pess_half],
+            "sensitivity_optimistic_difference_interval_R":
+                [opt[i] - opt_half, opt[i] + opt_half],
             "decision_rate_difference": decision[i],
             "ambiguity_rate_difference": ambiguity[i],
             "simultaneous_decision_rate_interval":
@@ -344,37 +367,56 @@ def build_comparison_payload(results, random_rows, sweep_payload,
     payload = build_screen_payload(results, random_rows)
     payload["status"] = "VALID_RANDOM_TIME_CONTROL_RTC2"
     payload["control_design"] = {
-        "estimand": ("same-market/date random-time plus randomized-direction "
-                     "composite control; not a causal timing-only control"),
+        "estimand": ("same-market/date random-time control with empirical "
+                     "slot matching; side matched to the captured E19B-R "
+                     "event side via the side-capture export"),
         "event_predicates": [], "seed": SEED,
         "control_spec_sha256": CONTROL_SPEC_SHA256,
         "risk_spec_sha256": RISK_SPEC_SHA256,
-        "sampling": ("one exact-uniform completed-bar EndTime draw on each "
-                     "E19B-R source market/date, 09:30<=ET<12:00"),
-        "side": "deterministic independent 50/50 draw in expectation",
+        "slot_spec_sha256": SLOT_SPEC_SHA256,
+        "excluded_holiday_sessions": list(EXCLUDED_HOLIDAY_DATES),
+        "sampling": ("slot drawn from the empirical E19B-R slot histogram, "
+                     "excluding each source event's own slot +/- one bar"),
+        "side": ("matched to the captured E19B-R event side (side-capture "
+                 "export), not a randomized 50/50 draw"),
         "reference": "completed five-minute bar close",
         "horizon_minutes": 120, "required_path_bars": 24,
+        "sweep_slot_histogram": list(SLOT_COUNTS),
+        "control_slot_histogram": [
+            sum(1 for row in random_rows if row["window_index"] == i)
+            for i in range(30)],
     }
     payload["surface_comparison"] = {
         "reference_artifact": "e19br_ft_screen.json",
         "friction_tolerance_R": FRICTION_R,
         "rate_tolerance": RATE_TOLERANCE,
+        "resolution_convention": ("primary = pessimistic (same-bar ambiguity "
+                                  "priced stop-first); optimistic reported as "
+                                  "a declared sensitivity endpoint only"),
         "bootstrap_method": ("paired market/date cluster bootstrap; separate "
-                             "97.5% max-deviation bands per metric family "
-                             "(payoff endpoints, rate endpoints); joint "
-                             "coverage across families is not claimed"),
+                             "97.5% max-deviation critical values per metric "
+                             "family (pessimistic payoff, optimistic payoff, "
+                             "decision/ambiguity rate); joint coverage across "
+                             "families is not claimed"),
         "bootstrap_seed": BOOTSTRAP_SEED, "bootstrap_reps": bootstrap_reps,
         "date_cluster_count": cluster_count,
-        "simultaneous_payoff_half_width_R": pay_half,
+        "simultaneous_pessimistic_half_width_R": pess_half,
+        "simultaneous_optimistic_half_width_R": opt_half,
         "simultaneous_rate_half_width": rate_half,
+        "sweep_best_mean_R_pessimistic": sweep_best_pessimistic,
+        "sweep_best_mean_R_optimistic": sweep_best_optimistic,
+        "sweep_clears_friction": sweep_best_pessimistic > FRICTION_R,
         "max_abs_matched_policy_delta_R": max_abs_delta,
         "material_difference_cells": material_cells,
         "classification": classification,
         "decision_rule": (
-            "material requires a simultaneous ambiguity-robust difference "
-            "bound outside +/-0.2R; equivalence requires every full ambiguity "
-            "difference band inside +/-0.2R and every decision/ambiguity-rate "
-            "band inside +/-0.05; otherwise inconclusive"),
+            "material: a pessimistic difference CI lies wholly outside "
+            "+/-0.2R. equivalence: every pessimistic difference CI inside "
+            "+/-0.2R and every decision/ambiguity-rate CI inside +/-0.05. A "
+            "material difference whose sweep surface best pessimistic cell "
+            "sits at or below 0.2R labels DIFFERS_BUT_NULL (untradable); only "
+            "a sweep surface whose pessimistic best clears 0.2R labels "
+            "DIFFERS_AND_TRADABLE. otherwise inconclusive"),
         "formula_scope": sweep_payload["martingale_benchmark"]["formula_scope"],
         "cells": cells,
     }
