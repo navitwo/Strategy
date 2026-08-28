@@ -1123,7 +1123,7 @@ def test_side_capture_drives_real_reclaim_path_and_packs_side():
     assert len(a._ev_candidates) == 1
     c0 = a._ev_candidates[0]
     assert c0["side"] == -1
-    resolve_et = datetime(2024, 3, 4, 11, 40)    # exactly 120 minutes later
+    resolve_et = datetime(2024, 3, 4, 12, 5)     # 145min later; OUTSIDE window
     agg = {"high": 20991.5, "low": 20991.5, "close": 20991.5,
            "et": resolve_et, "ts": int(resolve_et.timestamp())}
     a._abs_now += 1
@@ -1133,7 +1133,11 @@ def test_side_capture_drives_real_reclaim_path_and_packs_side():
     value = a.charts["E19B-FT"].series["a"].values[0].y
     meta = sc.unpack_side_payload(value)
     assert meta["side"] == -1
-    assert meta["session_type"] == 0   # ordinary RTH resolution inside 09:30-12:00
+    # reclaim bar (09:40) is INSIDE the window -> session_type 0, even though
+    # the H=120 resolution bar (12:05) is outside. This pins the flag to the
+    # reclaim clock, not the resolution clock.
+    assert a._ev_results[0]["session_type"] == 0
+    assert meta["session_type"] == 0
     assert meta["ft32"] == int(a.charts["E19B-FT"].series["a"].values[0].y) \
         & 0xFFFFFFFF
     assert a.RuntimeStatistics["side_capture_spec_version"] == \

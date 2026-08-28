@@ -9,7 +9,7 @@ from event_predicates import (resolve_event_predicates,
 from scifvg_config import (FT_CELLS, CONFIG_KEYS, CONFIG_DEFAULTS, FUNNEL_KEYS,
                            canonical_identity_config)
 import random_time_control as rtc
-import side_capture as side
+import side_capture as sidecap
 
 # This module is the hosted no-order engine: events_only, discovery_only,
 # random_time_control, and side_capture. The archived strategy-execution code
@@ -52,7 +52,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
         if rtc.configure_random_control(cfg):
             self.event_predicate_names = ()
-        elif side.configure_side_capture(cfg):
+        elif sidecap.configure_side_capture(cfg):
             self.event_predicate_names = resolve_event_predicates(
                 cfg["event_predicates"])
             cfg["event_predicates"] = ",".join(self.event_predicate_names)
@@ -369,6 +369,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 "date": str(getattr(et, "date",
                                     lambda: et)()),
                 "ts0": _now_ts,
+                # session-type is the RECLAIM bar's own clock time (not the
+                # later resolution bar): 0 inside the 09:30-12:00 window,
+                # 1 for a holiday / shifted-schedule session.
+                "session_type": sidecap.session_type_for_reclaim_et(et),
                 "px": float(b["close"]),
                 "stop_px": float(stop), "risk_dist": float(dist),
                 "idx0": self._abs_now,
@@ -450,6 +454,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         "arm": "counter" if not ev["bias_aligned"]
                                else "primary",
                         "side": ev["side"], "date": ev["date"],
+                        "session_type": ev.get("session_type", 0),
                         "h_min": h, "ret_r": round(ret_r, 6),
                         "entry_px": round(ev["px"], 2),
                         "stop_px": round(ev["stop_px"], 2),
@@ -581,8 +586,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     p = pack_discovery_payload(
                         p, e.get("event_predicate_mask", 1))
                 elif variant == "side_capture":
-                    p = side.pack_side_payload(
-                        p, e.get("side"), side.session_type_for_reclaim_et(ts_dt))
+                    p = sidecap.pack_side_payload(
+                        p, e.get("side"), e.get("session_type", 0))
                 x = fx.get(ts_dt, 0); fx[ts_dt] = x + 1
                 fs.add_point(ts_dt + timedelta(seconds=x), float(p))
                 self._n_ft_rows += 1
@@ -629,8 +634,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if rtc.is_random_control(self.cfg):
                 for key, value in rtc.random_control_runtime(self).items():
                     RT[key] = str(value)
-            if side.is_side_capture(self.cfg):
-                for key, value in side.side_capture_runtime(self).items():
+            if sidecap.is_side_capture(self.cfg):
+                for key, value in sidecap.side_capture_runtime(self).items():
                     RT[key] = str(value)
             # no-order invariant: execution/reconciliation counters are
             # structurally zero for this engine.
