@@ -203,6 +203,14 @@ def backtest_read(project_id, backtest_id):
     return request("backtests/read", {"projectId": project_id, "backtestId": backtest_id})
 
 
+def backtest_delete(project_id, backtest_id):
+    d = request("backtests/delete", {"projectId": project_id,
+                                    "backtestId": backtest_id})
+    if str(d.get("success", "")).lower() != "true":
+        raise RuntimeError(f"backtests/delete failed: {str(d)[:200]}")
+    return True
+
+
 def backtest_list(project_id):
     d = request("backtests/list", {"projectId": project_id})
     if str(d.get("success", "")).lower() != "true":
