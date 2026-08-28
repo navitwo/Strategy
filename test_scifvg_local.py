@@ -1133,9 +1133,8 @@ def test_side_capture_drives_real_reclaim_path_and_packs_side():
     value = a.charts["E19B-FT"].series["a"].values[0].y
     meta = sc.unpack_side_payload(value)
     assert meta["side"] == -1
-    # reclaim bar (09:40) is INSIDE the window -> session_type 0, even though
-    # the H=120 resolution bar (12:05) is outside. This pins the flag to the
-    # reclaim clock, not the resolution clock.
+    # 2024-03-04 is not a holiday: session_type 0 regardless of reclaim vs
+    # resolution clock. (Holiday classification is the frozen date set.)
     assert a._ev_results[0]["session_type"] == 0
     assert meta["session_type"] == 0
     assert meta["ft32"] == int(a.charts["E19B-FT"].series["a"].values[0].y) \
@@ -1574,11 +1573,15 @@ def test_side_capture_pack_roundtrip_and_session_type():
                 assert meta["ft32"] == ft32
                 assert meta["side"] == side
                 assert meta["session_type"] == sess
-    # session-type: ordinary RTH window vs holiday/shifted reclaim
+    # session-type: the FROZEN holiday-date set flags shifted-schedule sessions
+    # (a pure clock-window test cannot distinguish them: the four affected
+    # events reclaim INSIDE the ordinary window on the shifted schedule).
     assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 10, 0)) == 0
     assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 9, 30)) == 0
+    assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 12, 0)) == 0
     assert sc.session_type_for_reclaim_et(datetime(2011, 2, 21, 16, 5)) == 1
-    assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 12, 0)) == 1
+    assert sc.session_type_for_reclaim_et(datetime(2018, 2, 19, 10, 0)) == 1
+    assert sc.session_type_for_reclaim_et(datetime(2022, 6, 20, 11, 0)) == 1
     # out-of-range FT32 must fail closed
     try:
         sc.pack_side_payload(1 << 32, 1, 0)

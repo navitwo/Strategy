@@ -20,6 +20,13 @@ Bit layout (all exactly representable in float64, total < 2^52):
 
 SIDE_CAPTURE_SPEC_VERSION = "SIDE-CAPTURE-v1"
 
+# Frozen US-market-holiday session dates whose GTB Globex schedule shifts the
+# ordinary 09:30-12:00 window gate. Mirrors EXCLUDED_HOLIDAY_DATES in
+# d45_random_time_control.py. These reclaims are a documented conformance
+# defect in the frozen E19B-R study (see EXPERIMENT_LOG.md "RTC2 conformance
+# finding"), and are excluded from BOTH sides of the RTC2 paired comparison.
+HOLIDAY_SESSION_DATES = ("2011-02-21", "2018-02-19", "2022-06-20")
+
 
 def is_side_capture(config):
     return str(config.get("variant")) == "side_capture"
@@ -53,10 +60,16 @@ def unpack_side_payload(payload):
 
 
 def session_type_for_reclaim_et(et):
-    """1 if the reclaim bar's EndTime is outside the ordinary 09:30-12:00
-    RTH window (holiday / shifted-schedule session), else 0."""
-    m = et.hour * 60 + et.minute
-    return 0 if (9 * 60 + 30 <= m < 12 * 60) else 1
+    """1 if the reclaim bar falls on a US-market-holiday session whose Globex
+    schedule shifts the ordinary 09:30-12:00 window gate, else 0.
+
+    The holiday determination is the FROZEN conformance-finding date set, not
+    a clock-window heuristic: the four affected events reclaim inside the
+    ordinary window on the shifted schedule, so a pure hour/minute test cannot
+    distinguish them. Reclaim on one of HOLIDAY_SESSION_DATES => 1 (holiday /
+    shifted-schedule session), otherwise 0 (ordinary RTH session)."""
+    iso = et.date().isoformat() if hasattr(et, "date") else str(et)[:10]
+    return 1 if iso in HOLIDAY_SESSION_DATES else 0
 
 
 def side_capture_runtime(algo):
