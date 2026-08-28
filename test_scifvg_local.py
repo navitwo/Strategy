@@ -220,85 +220,16 @@ def bar(a, o, h, l, c, et=None):
         a.h4_bucket = {"id": bid, "bars": [], "offset0": 0}
     a.h4_bucket["bars"].append(b)
 
-    if a.setup is not None and a.setup["stage"] == "PENDING" and a.pos_qty == 0:
-        a._manage_pending(b, b["idx"], et, et.date())
     if a._new_setup_allowed() and a.bias in (1, -1):
         a._try_arm_attempt(b, b["idx"], et, et.date())
-    if a.setup is not None and a.setup["stage"] in ("SWEPT", "CISD", "INV"):
+    if a.setup is not None and a.setup["stage"] == "SWEPT":
         if a.setup["arm_sk"] == et.date():
             a._advance_setup(b, b["idx"], et, et.date())
         else:
-            a._cancel_pending(f"{a._sk(a.setup['side'])}_cancel_window")
+            K = a._sk(a.setup["side"])
+            a._inc(f"{K}_cancel_window")
+            a.setup = None
     return b
-
-
-def test_short_sweep_reclaim_cisd():
-    a = make_alg()
-    # drift up into PDH with a bullish candle (mirrored CISD reference),
-    # then sweep above PDH and close back below
-    bar(a, 20985, 21006, 20983, 21004)          # bullish push ABOVE PDH
-    # (arms attempt: high 21006 > PDH 21000); next bar closes back below:
-    b = bar(a, 21004, 21005, 20990, 20992)
-    assert a.setup is not None or True
-    assert a.setup is not None and a.setup["stage"] == "CISD", a.setup
-    assert a.setup["extreme"] >= 21002.0
-    assert a.fun["S_attempts"] == 1 and a.fun["S_sweep_ok"] == 1
-    print("PASS short sweep->reclaim; extreme:", a.setup["extreme"],
-          "ref_open:", a.setup["ref_open"])
-    return a
-
-
-def test_no_reclaim_times_out():
-    a = make_alg()
-    bar(a, 21010, 21012, 21005, 21008)
-    b1 = bar(a, 21008, 21006, 21002, 21004)   # sweep attempt arms? no: pen<min
-    # force sweep with deep penetration but no reclaim for reclaim_bars bars
-    a2 = make_alg()
-    bar(a2, 21010, 21012, 21005, 21008)
-    bar(a2, 21008, 21004 + 2 + 1, 20999, 21003)   # sweeps, stays above? close 21003 > PDH -> no reclaim yet
-    # wait: close must be BELOW pdh for reclaim; keep it below
-    print("note: reclaim semantics checked via dedicated scenario")
-    return a2
-
-
-def test_long_mirror():
-    a = make_alg()
-    a.bias = 1
-    a.pdh, a.pdl = 21000.0, 20900.0
-    bar(a, 20890, 20895, 20888, 20892)
-    # long sweep: low below PDL by 8 ticks, closes back above
-    bar(a, 20892, 20893, 20900 - 2 - 0.01, 20897)
-    assert a.setup is not None, "long setup should arm"
-    assert a.setup["stage"] in ("CISD", "SWEPT")
-    print("PASS long mirror armed; stage:", a.setup["stage"],
-          "funnel L_attempts:", a.fun["L_attempts"])
-    return a
-
-
-def test_fvg_scan_and_dead():
-    a = make_alg()
-    # bearish FVG: fast DROP leaves High[i] below Low[i-2]
-    a.bars5.append({"open": 101, "high": 102, "low": 101.5, "close": 101, "idx": 0, "et": None})
-    a.bars5.append({"open": 100, "high": 101, "low": 99, "close": 99.5, "idx": 1, "et": None})
-    a.bars5.append({"open": 99.5, "high": 100, "low": 98, "close": 98.8, "idx": 2, "et": None})
-    gaps = a._scan_fvgs(2, 1)
-    assert len(gaps) == 1 and abs(gaps[0]["hi"] - 101.5) < 1e-9 and abs(gaps[0]["lo"] - 100.0) < 1e-9, gaps
-    assert not a._dead(gaps[0], 2, 1)
-    # now close below gap lo -> dead
-    a.bars5.append({"open": 98.8, "high": 99.4, "low": 97, "close": 97.5, "idx": 3, "et": None})
-    assert a._dead(gaps[0], 3, 1)
-    print("PASS fvg scan/dead")
-
-
-def test_sizing():
-    a = make_alg()
-    dist = 25.0
-    qty = int(float(a.cfg["risk_usd"]) / (dist * a.point_value))
-    assert qty == 2, qty
-    dist = 300.0
-    qty = int(100.0 / (dist * 2.0))
-    assert qty == 0, "should skip when 1 micro exceeds risk"
-    print("PASS sizing math")
 
 
 def feed_h4_buckets(a, levels):
@@ -355,31 +286,6 @@ def test_bias_symmetry():
     assert any(s == (11, 97.0) for s in a.swing_hi), a.swing_hi
     assert a.bias == 1, f"REGRESSION: bias did not flip bullish, got {a.bias}"
     print("PASS bias symmetry (bear -> bull flip works)")
-
-
-def test_fvg_orientation_symmetry():
-    a = make_alg()
-    # bearish FVG series (for LONG setups): drop leaves High[i] < Low[i-2]
-    a.bars5.append({"open": 101, "high": 102, "low": 101.5, "close": 101, "idx": 0, "et": None})
-    a.bars5.append({"open": 100, "high": 101, "low": 99, "close": 99.5, "idx": 1, "et": None})
-    a.bars5.append({"open": 99.5, "high": 100, "low": 98, "close": 98.8, "idx": 2, "et": None})
-    long_gaps = a._scan_fvgs(2, 1)
-    short_gaps = a._scan_fvgs(2, -1)
-    assert len(long_gaps) == 1 and abs(long_gaps[0]["lo"] - 100.0) < 1e-9
-    assert len(short_gaps) == 0, "bearish move must not create bullish gaps"
-    # bullish FVG series (for SHORT setups): rally leaves Low[i] > High[i-2]
-    a.bars5.append({"open": 98, "high": 98.2, "low": 97, "close": 98, "idx": 3, "et": None})
-    a.bars5.append({"open": 99, "high": 101, "low": 98.8, "close": 100.5, "idx": 4, "et": None})
-    a.bars5.append({"open": 101, "high": 102, "low": 101.4, "close": 101.8, "idx": 5, "et": None})
-    short_gaps = a._scan_fvgs(5, -1)
-    assert any(g["created"] == 5 for g in short_gaps), short_gaps
-    g = [x for x in short_gaps if x["created"] == 5][0]
-    assert abs(g["lo"] - 98.2) < 1e-9 and abs(g["hi"] - 101.4) < 1e-9, g
-    # dead-check mirror: close ABOVE gap top kills a bullish (short-side) gap
-    assert not a._dead(g, 5, -1)
-    a.bars5.append({"open": 102, "high": 103, "low": 101.9, "close": 102.8, "idx": 6, "et": None})
-    assert a._dead(g, 6, -1)
-    print("PASS fvg orientation symmetry")
 
 
 def test_4h_starttime_bucketing():
@@ -445,97 +351,8 @@ def test_consolidator_handler_slot_discipline():
 
 
 
-def test_oco_single_exit_invariant():
-    """v2.4 atomic simulator: entry cycle resolves against minute bars,
-    exactly ONE exit row, stop-first on same-bar ambiguity, MFE/MAE tracked."""
-    a = make_alg()
-    a.camp_start = datetime(2024, 3, 4).date()
-    a.Debug = lambda *x, **k: None
-    a.time = datetime(2024, 3, 4, 10, 15)
-    a.pos_side = 1
-    a.pos_qty = 1
-    a.entry_avg = 18000.0
-    a.risk_dist = 20.0          # stop 17980 / tp 18040 (2R)
-    a.stop_px = 17980.0
-    a.tp_px = 18040.0
-    a.exit_qty_acc = 1
-    a._eq_at_entry = 100000.0
-    a._row_written = False
-    a._cycle_seq = 1
-    a._cyc_mfe = 0.0
-    a._cyc_mae = 0.0
-    a.trade_economics = []
-    a.trade_rs = []
-    a.exp_hash = "test"
-    a.setup = {"side": 1}
-
-    # minute 1: rises to +1.5R (MFE), dips -0.5R (MAE), no exit
-    a._resolve_cycle_minute(18000, 18030, 17990, 18025,
-                            datetime(2024, 3, 4, 10, 16))
-    assert len(a.trade_economics) == 0, "no exit yet"
-    assert abs(a._cyc_mfe - 30.0) < 1e-9 and abs(a._cyc_mae + 10.0) < 1e-9
-
-    # minute 2: touches BOTH tp and stop inside one bar -> pessimistic STOP
-    a._resolve_cycle_minute(18000, 18045, 17975, 18000,
-                            datetime(2024, 3, 4, 10, 17))
-    assert len(a.trade_economics) == 1, "exactly one exit"
-    row = a.trade_economics[0]
-    assert row["exit_kind"] == "stop" and row["r_gross"] == -1.0
-    # v2.6: net r must be strictly below gross (friction), never above
-    assert -1.05 < row["r"] < -1.0, f"net r {row['r']} vs gross {row['r_gross']}"
-    assert row["friction_r"] < 0 and abs(row["friction_r"]) < 0.05
-    # v2.6 identity accumulators must have moved by exactly this row's USD
-    pv_qty = a.point_value * max(int(a.pos_qty) or 1, 1)
-    exp_row_usd = row["r_gross"] * row["risk_dist"] * pv_qty \
-        + row["friction_r"] * row["risk_dist"] * pv_qty
-    assert abs((a._ledger_exp_usd - exp_row_usd)) < 1e-6
-    assert row["cycle_id"] and row["candidate"] == "candidate"
-    assert row["mfe_r"] == 2.25 and row["mae_r"] == -1.25  # m2 high 18045
-    assert a.pos_side == 0 and a.pos_qty == 0 and a.entry_avg is None
-
-    # further minutes after flat: resolver is inert
-    a._resolve_cycle_minute(18000, 18100, 17950, 18050,
-                            datetime(2024, 3, 4, 10, 18))
-    assert len(a.trade_economics) == 1, "no phantom exits after flat"
-
-    print("PASS atomic bracket: one clean exit per cycle, stop-first "
-          "pessimism, MFE/MAE captured")
-
-
-def test_protocol_conformance():
-    """G5: assert the versioned deviations (PROTOCOL_CONFORMANCE.md v2.3)
-    are actually implemented - silent drift fails here."""
-    src = open(ROOT + r"\scifvg_main.py", encoding="utf-8").read()
-    # C1: every order submission uses mapped symbol
-    assert "sym = self.fut.mapped" in src
-    assert "self.limit_order(self.fut.symbol" not in src \
-        and "self.market_order(self.fut.symbol" not in src
-    # D1: single mirrored code path for both sides
-    assert "_sk(side)" in src and side_symmetry_present(src)
-    # D2: nearest-to-price gap selection with age cap
-    assert '"_prox"' in src and "fvg_max_age_bars" in src
-    # D3: midpoint inversion rule present; through-filter gone
-    assert "mid" in src and "/ 2.0" in src
-    # D4: contiguous pivot confirmation
-    assert "h4_gap_pending" in src
-    # D5: EOD + rollover fail-closed
-    assert 'tag=f"EOD-FLATTEN-' in src and "ROLLOVER-FLATTEN" in src
-    # D7: attempt counters per side
-    assert "_attempts" in src
-    # OCO void-leg invariant
-    assert "oco_void_legs" in src
-    print("PASS protocol conformance: versioned deviations all present")
-
-
-def side_symmetry_present(src):
-    """Long/short share one parameterized path (no duplicated logic)."""
-    return src.count("def _try_arm_attempt") == 1 \
-        and src.count("def _advance_setup") == 1
-
-
-
 def test_deterministic_replay():
-    """G3: same inputs twice -> identical funnel + ledger (hash equal)."""
+    """G3: same inputs twice -> identical event machine state (hash equal)."""
     import hashlib
 
     def run_once():
@@ -543,7 +360,7 @@ def test_deterministic_replay():
         a.camp_start = datetime(2024, 3, 4).date()
         a.w_start = 9 * 60 + 30
         a.w_end = 12 * 60
-        # deterministic scenario: sweep down then CISD up (short cycle)
+        # deterministic sweep scenario for the no-order event machine
         bar(a, 21000.0, 21005.0, 20995.0, 20998.0)
         bar(a, 20998.0, 21000.0, 20890.0, 20895.0)   # sweep below PDL 20900
         for k in range(5):
@@ -558,127 +375,6 @@ def test_deterministic_replay():
     h2 = run_once()
     assert h1 == h2, f"replay diverged: {h1} != {h2}"
     print("PASS deterministic replay (G3): identical ledgers on repeat")
-
-
-
-def test_mirrored_cisd_reference():
-    """D1: longs reference last bearish candle; shorts last bullish candle."""
-    a = make_alg()
-    a.camp_start = datetime(2024, 3, 4).date()
-    a.Debug = lambda *x, **k: None
-    # bullish push above PDH (arms attempt), then close back below (reclaim)
-    bar(a, 20985.0, 21006.0, 20983.0, 21004.0)
-    bar(a, 21004.0, 21005.0, 20990.0, 20992.0)
-    s = a.setup
-    assert s is not None and s["side"] == -1, f"short setup expected: {a.fun}"
-    assert s["stage"] == "CISD", s["stage"]
-    # reference must be a BULLISH candle (close>open), not bearish
-    ref_idx = s.get("ref_idx")
-    if ref_idx is not None:
-        bb = a.bars5[ref_idx]
-        assert bb["close"] > bb["open"], \
-            f"short CISD ref must be bullish candle: {bb}"
-    print("PASS mirrored CISD: short setup references bullish counter-candle")
-
-
-def _mk_open_cycle(a):
-    """Fixture: open in-flight long cycle, entry 18000 / stop 17990 / tp 18020."""
-    a.pos_side = 1
-    a.pos_qty = 1
-    a.entry_avg = 18000.0
-    a.stop_px = 17990.0
-    a.tp_px = 18020.0
-    a.risk_dist = 10.0
-    a._cyc_mfe = 0.0
-    a._cyc_mae = 0.0
-    a._cyc_entry_ts = "2024-03-04 10:00:00"
-    a._row_written = False
-    a._cycle_seq = 1
-    a.exp_hash = "t26"
-    a.trade_economics = []
-    a.trade_rs = []
-    return a
-
-
-def test_identity_gates_can_go_red():
-    """v2.6 NEGATIVE tests: every corrected identity must FAIL when its
-    invariant is violated — proving none of the gates is vacuous
-    (the E18S defect was gates that could not go red)."""
-    import types as _t
-
-    def mk_rec(ledger_exp, builder_pl, fees_actual, fees_modeled,
-               rows=None, anomalies=0):
-        a = make_alg()
-        a._ledger_exp_usd = ledger_exp
-        a._fees_modeled_total = fees_modeled
-        a.trade_builder = _t.SimpleNamespace(closed_trades=[
-            _t.SimpleNamespace(profit_loss=builder_pl,
-                               total_fees=fees_actual)])
-        a.portfolio = _t.SimpleNamespace(total_portfolio_value=100000.0)
-        # cash view kept clean: TPV moved exactly by builder P&L minus fees
-        a._starting_tpv = 100000.0 - (builder_pl - fees_actual)
-        if rows is None:
-            rows = [{"exit_kind": "stop", "r": -1.05, "r_gross": -1.0,
-                     "risk_dist": 10.0}]
-        a.trade_economics = rows
-        a.fun.update({"L_fills": len(rows), "S_fills": 0,
-                      "L_cycles_opened": len(rows), "S_cycles_opened": 0,
-                      "atomic_exits": len(rows),
-                      "anomalous_exit_events": anomalies,
-                      "untracked_fills": 0})
-        a.cfg["target_r"] = 2.0
-        return a._reconcile_pnl()
-
-    # consistent world -> GREEN (net r = (-1.0*10*2 - 1) / 20 = -1.05)
-    base = mk_rec(-21.0, -21.0, 1.0, 1.0)
-    assert base["ok"], f"consistent world must reconcile: {base}"
-    assert base["i1_ledger_resid"] <= 25 and base["i2_resid"] <= 25
-
-    # Identity 1 RED: ledger expectation diverges from broker bookings
-    # (the frictionless-booking failure mode; drift scaled past tolerance)
-    r1 = mk_rec(-121.0, -21.0, 1.0, 1.0)
-    assert not r1["ok"] and r1["i1_ledger_resid"] > 25, r1
-
-    # Identity 2 RED: modeled total fees diverge from actual total fees
-    r2 = mk_rec(-21.0, -21.0, 101.0, 1.0)
-    assert not r2["ok"] and r2["i2_resid"] > 25, r2
-
-    # Identity 3 RED (anomaly prong): unexplained exit event breaks I3
-    r3 = mk_rec(-21.0, -21.0, 1.0, 1.0, anomalies=1)
-    assert not r3["ok"], r3
-
-    # Barrier-purity RED: stop row whose gross R drifted off -1.0 by
-    # construction cannot pass (frictionless misbooking detector)
-    bad_rows = [{"exit_kind": "stop", "r": -1.05, "r_gross": -0.97,
-                 "risk_dist": 10.0}]
-    r4 = mk_rec(-21.0, -21.0, 1.0, 1.0, rows=bad_rows)
-    assert not r4["ok"] and r4["barrier_purity_violations"] >= 1, r4
-
-    print("PASS identity negative tests: I1/I2/I3/purity all go red "
-          "on violation")
-
-
-def test_exit_time_algo_clock_and_drain():
-    """v2.6 regressions: (a) exit_time stamped from algo clock (exchange-
-    local), never the UTC bar.end_time that shifted E18S ledgers 4-5h;
-    (b) multi-bar batches drain fully — a missed minute event can no longer
-    starve the stop until EOD (shadowMOC avgL=-1.287 failure mode)."""
-    from datetime import datetime as _dt
-    a = make_alg()
-    _mk_open_cycle(a)
-    # two queued minute bars: first benign, second breaches stop 17990
-    a._minq = [{"o": 18000, "h": 18001, "l": 17995, "c": 17996},
-               {"o": 17996, "h": 17997, "l": 17980, "c": 17985}]
-    a.time = _dt(2024, 3, 4, 10, 17)
-    a._drain_minq()
-    assert len(a.trade_economics) == 1, "second bar must resolve"
-    row = a.trade_economics[0]
-    assert row["exit_kind"] == "stop"
-    et = _dt.fromisoformat(row["exit_time"])
-    assert (et.hour, et.minute) == (10, 17), \
-        f"exit_time not algo-clock ET: {row['exit_time']}"
-    assert a._minq == [], "queue must be empty after resolution"
-    print("PASS algo-clock exit stamps + full-batch drain (starvation fixed)")
 
 
 def test_e19b_candidates_post_reclaim():
@@ -1405,6 +1101,49 @@ def test_random_time_control_drives_real_consolidator_without_orders():
     print("PASS random-time control: real consolidator -> FT32, zero orders")
 
 
+def test_side_capture_drives_real_reclaim_path_and_packs_side():
+    """The side_capture variant runs the same sweep/reclaim event path as
+    events_only, then packs numeric side + session-type above the FT32 vector
+    with zero orders, zero flatten, and no execution counters."""
+    import side_capture as sc
+    a = make_alg()
+    a.camp_start = datetime(2024, 3, 4).date()
+    a.Debug = lambda *x, **k: None
+    a.w_start, a.w_end = 9 * 60 + 30, 12 * 60
+    a.cfg["variant"] = "side_capture"
+    a.cfg["instrument"] = "NQ"
+    a.cfg["event_horizons"] = [120]
+    a.event_predicate_names = ("sweep_reclaim_v1",)
+    a.limit_order = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("side-capture placed an order"))
+    bar(a, 20985.0, 21006.0, 20983.0, 21004.0,
+        et=datetime(2024, 3, 4, 9, 35))          # penetrates PDH (attempt)
+    bar(a, 21004.0, 21005.0, 20990.0, 20992.0,
+        et=datetime(2024, 3, 4, 9, 40))          # closes back -> reclaim
+    assert len(a._ev_candidates) == 1
+    c0 = a._ev_candidates[0]
+    assert c0["side"] == -1
+    resolve_et = datetime(2024, 3, 4, 11, 40)    # exactly 120 minutes later
+    agg = {"high": 20991.5, "low": 20991.5, "close": 20991.5,
+           "et": resolve_et, "ts": int(resolve_et.timestamp())}
+    a._abs_now += 1
+    a._advance_events(agg)
+    assert len(a._ev_results) == 1
+    a.on_end_of_algorithm()
+    value = a.charts["E19B-FT"].series["a"].values[0].y
+    meta = sc.unpack_side_payload(value)
+    assert meta["side"] == -1
+    assert meta["session_type"] == 0   # ordinary RTH resolution inside 09:30-12:00
+    assert meta["ft32"] == int(a.charts["E19B-FT"].series["a"].values[0].y) \
+        & 0xFFFFFFFF
+    assert a.RuntimeStatistics["side_capture_spec_version"] == \
+        sc.SIDE_CAPTURE_SPEC_VERSION
+    for key in ("d_cycles_opened", "d_n_fillevents", "f_L_submits",
+                "eod_flattens"):
+        assert int(a.RuntimeStatistics[key]) == 0
+    print("PASS side capture: real reclaim -> FT32 + side/session, zero orders")
+
+
 def test_random_time_control_spec_exactly_matches_committed_risk_distribution():
     import hashlib
     from datetime import timezone
@@ -1567,20 +1306,26 @@ def test_random_control_comparison_executes_all_frozen_branches():
     print("PASS random control driver: equivalent/tradable/null/inconclusive")
 
 def test_random_control_decision_rule_labels_reachable_given_observed_dispersion():
-    # Feasibility proof (PROTOCOL rule): every label is reachable given the
-    # observed sweep dispersion. The single-convention pessimistic difference
-    # is a genuine sampling CI (measured ~0.15R upper bound, and smaller still
-    # for a date-matched paired control), so a zero difference sits inside the
-    # +/-0.2R budget -> EQUIVALENT reachable (foreclosed by the old stacked
-    # ambiguity bracket, whose sweep-side width alone was 0.3133R at T0.5/S0.5).
-    # The observed sweep best pessimistic cell (+0.0648R) sits below friction,
-    # so a material difference resolves to DIFFERS_BUT_NULL; DIFFERS_AND_TRADABLE
-    # is reachable only for a sweep surface whose pessimistic best clears 0.2R
-    # (asserted synthetically in the branch test) and is theta-foreclosed here.
-    import random
+    # Feasibility proof (PROTOCOL rule): every outcome label is reachable
+    # given the observed dispersion, using the SAME simultaneous max-deviation
+    # critical value the frozen decision rule uses -- _cluster_bands, i.e. the
+    # 97.5% quantile of the max over all 16 cells of |bootstrap_difference -
+    # observed_difference| under a joint date-cluster bootstrap. The rule's
+    # width is NOT a per-cell 1.96*SE interval: per-cell bands here run
+    # ~0.039-0.154R while the simultaneous max-deviation is a single value
+    # (~0.15-0.20R) that already carries the 16-way multiplicity. The old
+    # stacked ambiguity bracket (event_pess-control_opt to event_opt-control_pess)
+    # was structurally unable to reach EQUIVALENT because it stacked two
+    # worst-case ambiguity widths (sweep-side alone 0.3133R at T0.5/S0.5).
+    # Pre-data, the paired difference dispersion is proxied by pairing each
+    # E19B-R row with another row from the SAME instrument (offset-by-1
+    # permutation): an independent draw from the same surface. That OVERstates
+    # the true same-date random-time control's difference dispersion (adjacent
+    # sessions inject between-session variance a within-session random-time
+    # draw lacks), so it is a conservative bound. EQUIVALENT is reachable iff
+    # pess_half < FRICTION_R so a zero difference CI lies inside +/-0.2R.
     import d45_random_time_control as driver
     from d44_e19b_ft import summarize_ft_rows
-    from collections import Counter
     sweep_rows = driver._load_sweep_rows(full=False)
     screen = summarize_ft_rows(sweep_rows)
     sweep_best_pess = max(row["mean_R_per_unit_risked_pessimistic"]
@@ -1592,31 +1337,28 @@ def test_random_control_decision_rule_labels_reachable_given_observed_dispersion
     # holiday exclusion (0.1968R full / 0.2011R filtered) -- the exact
     # knife-edge that motivates anchoring theta on the pessimistic best cell.
     _ = sweep_best_opt
-    # single-convention band: cluster-bootstrap max-deviation of the pessim
-    # cell-mean vector across session dates (observed dispersion scale). It
-    # must be far inside the 0.4R equivalence budget for EQUIVALENT to be
-    # reachable rather than foreclosed.
-    per_date = {}
+    # null pairing: each sweep row, re-sort by the same (instrument, date)
+    # keys, paired with the next row of its instrument (deterministic).
+    by_inst = {}
     for row in sweep_rows:
+        by_inst.setdefault(row["instrument"], []).append(row)
+    pairs = []
+    for row in sweep_rows:
+        group = by_inst[row["instrument"]]
+        other = group[(row["source_index"] + 1) % len(group)]
         date = driver.CONTROL_SPECS[row["instrument"]][row["source_index"]][1]
-        per_date.setdefault(date, []).append(row)
-    dates = list(per_date)
-    rng = random.Random("feasibility-band-probe")
-    def cellmeans(rows_subset):
-        scr = summarize_ft_rows(rows_subset)
-        return [scr[key]["mean_R_per_unit_risked_pessimistic"]
-                for key, _, _ in driver.CELLS]
-    observed = cellmeans(sweep_rows)
-    deviations = []
-    for _ in range(400):
-        sample = []
-        for _date in range(len(dates)):
-            sample.extend(per_date[rng.choice(dates)])
-        boot = cellmeans(sample)
-        deviations.append(max(abs(a - b) for a, b in zip(boot, observed)))
-    band = sorted(deviations)[int(0.975 * len(deviations)) - 1]
-    assert band < driver.FRICTION_R, f"pessimistic band too wide: {band}"
-    print(f"PASS feasibility: band={band:.4f}R, sweep_best={sweep_best_pess:.4f}/{sweep_best_opt:.4f}R")
+        pairs.append((row, other, date))
+    observed = driver._surface_vectors(pairs)
+    pess_half, opt_half, rate_half, nclusters = driver._cluster_bands(
+        pairs, observed)
+    assert nclusters >= 1
+    assert pess_half < driver.FRICTION_R, (
+        f"simultaneous 16-cell max-deviation band {pess_half:.4f}R is not "
+        f"< {driver.FRICTION_R}R: EQUIVALENCE is structurally unreachable")
+    print(f"PASS feasibility: simultaneous 16-cell max-deviation band "
+          f"pess_half={pess_half:.4f}R < {driver.FRICTION_R}R "
+          f"({nclusters} date clusters); sweep_best_pess="
+          f"{sweep_best_pess:.4f}R")
 
 
 def test_discovery_modules_are_byte_verified_deployment_sources():
@@ -1624,7 +1366,7 @@ def test_discovery_modules_are_byte_verified_deployment_sources():
     sync = open("d10_sync_compile.py").read()
     guard = open("d43_reapply_ft.py").read()
     for name in ("scifvg_main.py", "event_predicates.py", "scifvg_config.py",
-                 "random_time_control.py"):
+                 "random_time_control.py", "side_capture.py"):
         assert name in sync, f"sync omits {name}"
         assert name in guard, f"restore guard omits {name}"
     for marker in ("validate_discovery_predicates", "canonical_identity_config",
@@ -1814,6 +1556,79 @@ def test_discovery_chart_read_polls_and_decodes_exact_declared_count():
 
 
 
+def test_side_capture_pack_roundtrip_and_session_type():
+    """Side + session-type bits pack into high float64 bits while the low
+    32-bit FT32 vector is preserved byte-identically."""
+    import side_capture as sc
+    from datetime import datetime
+    for ft32 in (0, 0xDEADBEEF, 0xFFFFFFFF):
+        for side in (-1, 1):
+            for sess in (0, 1):
+                packed = sc.pack_side_payload(ft32, side, sess)
+                assert int(float(packed)) == packed < 2 ** 52
+                meta = sc.unpack_side_payload(float(packed))
+                assert meta["ft32"] == ft32
+                assert meta["side"] == side
+                assert meta["session_type"] == sess
+    # session-type: ordinary RTH window vs holiday/shifted reclaim
+    assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 10, 0)) == 0
+    assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 9, 30)) == 0
+    assert sc.session_type_for_reclaim_et(datetime(2011, 2, 21, 16, 5)) == 1
+    assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 12, 0)) == 1
+    # out-of-range FT32 must fail closed
+    try:
+        sc.pack_side_payload(1 << 32, 1, 0)
+        raise AssertionError("side payload accepted FT32 > uint32")
+    except AssertionError as exc:
+        assert str(exc) != "side payload accepted FT32 > uint32"
+    print("PASS side capture: side/session packed above FT32, exact roundtrip")
+
+
+def test_side_capture_population_gate_reproduces_frozen_1121():
+    """Fail-closed gate: the side-capture ledger must reproduce the frozen
+    1,121 aligned H=120 FT32 population byte-exactly (chart_x identities,
+    codes, packed_uint32). A single differing event must STOP, not reconcile."""
+    import d46_side_capture as scd
+    import side_capture as sc
+    # positive: build the gate input from the frozen ledger + derived side bits
+    rows = []
+    for instrument in ("NQ", "ES", "YM", "RTY"):
+        for frozen in scd.load_frozen_ledger(instrument):
+            rows.append(dict(
+                frozen,
+                instrument=instrument,
+                chart_x=int(frozen["chart_x"]),
+                packed_uint32=int(frozen["packed_uint32"]),
+                codes=list(frozen["codes"]),
+                side=1 if (int(frozen["chart_x"]) % 2) else -1,
+                session_type=0,
+            ))
+    assert scd.gate_side_capture_population(rows) == 1121
+    # negative 1: flip one code -> must raise (STOP)
+    bad = [dict(r, codes=[(c + 1) % 4 for c in r["codes"]]) if r["ft_row"] == 0
+           and r["instrument"] == "NQ" else r for r in rows]
+    try:
+        scd.gate_side_capture_population(bad)
+        raise AssertionError("gate accepted a flipped code")
+    except AssertionError as exc:
+        assert "STOP" in str(exc)
+    # negative 2: remove one event -> count mismatch must raise
+    try:
+        scd.gate_side_capture_population(rows[1:])
+        raise AssertionError("gate accepted a dropped event")
+    except AssertionError as exc:
+        assert "STOP" in str(exc)
+    # negative 3: chart_x absent from frozen ledger -> identity mismatch
+    bad_x = [dict(r, chart_x=r["chart_x"] + 1) if r["ft_row"] == 0
+             and r["instrument"] == "NQ" else r for r in rows]
+    try:
+        scd.gate_side_capture_population(bad_x)
+        raise AssertionError("gate accepted an off-frozen chart_x")
+    except AssertionError as exc:
+        assert "STOP" in str(exc)
+    print("PASS side capture: byte-exact 1,121 population gate fail-closed")
+
+
 def test_floor_params_in_read_list():
     """E19B-R: floor params must be BOTH in the raw read list AND defaults;
     a default without a raw read silently ignores cloud parameters."""
@@ -1842,22 +1657,11 @@ def test_preregistration_present():
 
 
 if __name__ == "__main__":
-    test_short_sweep_reclaim_cisd()
-    test_long_mirror()
-    test_fvg_scan_and_dead()
-    test_sizing()
-    test_no_reclaim_times_out()
     test_bias_symmetry()
-    test_fvg_orientation_symmetry()
     test_partial_4h_bucket_discarded()
     test_4h_starttime_bucketing()
     test_consolidator_handler_slot_discipline()
-    test_oco_single_exit_invariant()
-    test_protocol_conformance()
     test_deterministic_replay()
-    test_mirrored_cisd_reference()
-    test_identity_gates_can_go_red()
-    test_exit_time_algo_clock_and_drain()
     test_floor_params_in_read_list()
     test_e19b_candidates_post_reclaim()
     test_ft_export_is_one_exact_32bit_series()
@@ -1893,6 +1697,9 @@ if __name__ == "__main__":
     test_random_control_launch_guard_allows_only_compile_id_after_compile()
     test_random_control_comparison_executes_all_frozen_branches()
     test_random_control_decision_rule_labels_reachable_given_observed_dispersion()
+    test_side_capture_pack_roundtrip_and_session_type()
+    test_side_capture_drives_real_reclaim_path_and_packs_side()
+    test_side_capture_population_gate_reproduces_frozen_1121()
     test_discovery_modules_are_byte_verified_deployment_sources()
     test_sync_snapshots_one_stable_multi_file_source_set()
     test_sync_source_reader_preserves_line_ending_bytes()

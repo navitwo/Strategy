@@ -27,6 +27,9 @@ TARGETS = {
     "random_time_control.py": ((b"CONTROL_SPEC_SHA256", b"CONTROL_SPECS",
                                 b"pack_random_payload",
                                 b"advance_random_control"), (), 64000),
+    "side_capture.py": ((b"SIDE_CAPTURE_SPEC_VERSION", b"pack_side_payload",
+                         b"unpack_side_payload",
+                         b"session_type_for_reclaim_et"), (), 64000),
 }
 
 

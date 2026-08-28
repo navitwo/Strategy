@@ -460,7 +460,8 @@ def assert_preregistered_head():
     assert launch_status_is_allowed(status), (
         f"unexpected worktree changes before launch: {status}")
     for name in ("RANDOM_TIME_CONTROL_PREREGISTRATION.md",
-                 "random_time_control.py", "d45_random_time_control.py"):
+                 "random_time_control.py", "d45_random_time_control.py",
+                 "side_capture.py"):
         local = open(os.path.join(ROOT, name), "rb").read()
         committed = subprocess.check_output(
             ["git", "show", f"HEAD:{name}"], cwd=ROOT)

@@ -20,9 +20,14 @@ random-time data was drawn:
    consumes 78% of the 0.4R budget before any bootstrap or multiplicity term).
    The primary comparison now uses a **single resolution convention** —
    pessimistic, ambiguity priced stop-first — with the optimistic version as a
-   declared sensitivity endpoint only. This yields a genuine bootstrap CI
-   (~0.15R observed dispersion, smaller for a date-matched paired control) that
-   every cell can satisfy, and matches how `e19br_ft_screen.json` reports.
+   declared sensitivity endpoint only. The resulting band is a genuine
+   simultaneous max-deviation bootstrap critical value across all 16 cells
+   (97.5% quantile of the max cell deviation under a joint date-cluster
+   bootstrap), which measured **0.1974R** pre-data from a conservative
+   independent-draw null pairing and is under the 0.2R equivalence budget, and
+   matches how `e19br_ft_screen.json` reports. (A per-cell 1.96·SE interval
+   would be ~0.075R median; the max-deviation critical value already carries
+   the 16-way multiplicity and is the correct, frozen multiplier.)
 2. **Economic threshold anchored on the pessimistic best cell.** The tri-state
    rule carries the 0.2R θ discipline: a material difference whose sweep
    surface does not clear 0.2R round-trip friction is NULL for decision
@@ -68,14 +73,29 @@ open→close log returns 2010–2024 (Yahoo index series) are positive, not flat
 NQ +2.733 bp/day, ES +2.453, YM +2.408, RTY +1.457. Scaled to 120 minutes and
 divided by median risk_dist this is **0.097R (NQ), 0.056R (ES), 0.056R (YM),
 0.024R (RTY)** — an order of magnitude above the 0.01R threshold in every
-market. The pure-long maximum side skew `(2·p_long − 1) × drift_R` is therefore
-material relative to the 0.2R threshold, so side is NOT left as a randomized
-50/50 draw. Instead a **side-capture events-only pass** re-derives the E19B-R
-aligned H=120 events and captures each event's numeric side (±1), its explicit
-reclaim timestamp, and a session-type flag, all in one pass. The control side
-is then matched to each captured event side exactly. The captured side ledger
-is committed before the RTC2 export and its SHA-256 is frozen into the control
-spec.
+market. **These headline figures are pure-long drift** (a 100%-long position).
+The actual confound at a realistic long/short skew is `(2·p_long − 1) ×
+drift_R`: at a 60/40 skew that is 0.019R, and at a 70/30 skew 0.039R. Side
+capture is therefore justified not by the headline magnitude but by being
+*inside the ±0.2R comparison window while remaining permanently useful* —
+the confound is small enough that it cannot fabricate a material difference,
+yet capturing side exactly removes it as an assumption and costs nothing in a
+no-order pass. Side is NOT left as a randomized 50/50 draw. Instead a
+**side-capture events-only pass** re-derives the E19B-R aligned H=120 events
+and captures each event's numeric side (±1), its explicit reclaim timestamp,
+and a session-type flag, all in one pass. The control side is then matched to
+each captured event side exactly. The captured side ledger is committed before
+the RTC2 export and its SHA-256 is frozen into the control spec.
+
+**Side-capture fail-closed population gate.** Because the side-capture pass is
+a re-derivation of a frozen artifact, it must reproduce the frozen 1,121-event
+FT32 population byte-exactly before its captured side/session bits are used:
+same per-market counts (NQ 388, ES 186, YM 376, RTY 171), same chart_x
+identities, same codes, and same packed_uint32. Any differing event means the
+engine is not deterministic across the side-capture change, and the correct
+response is STOP, never reconcile. The low 32 payload bits must remain FT32E
+byte-identical; side and session-type are packed into bits 32 and 33 above the
+FT32 vector, keeping the total payload below `2^52`.
 
 ## Frozen population and randomization
 

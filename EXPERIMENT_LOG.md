@@ -356,3 +356,42 @@ effectively unchanged, but the optimistic best cell moves 0.1968R -> 0.2011R,
 straddling the 0.2R friction reference; the pessimistic best (0.0648R -> 0.0688R)
 stays far below friction. This knife-edge in the optimistic bound is the reason
 the RTC2 economic threshold (theta) is anchored on the pessimistic best cell.
+
+## RTC2 pre-data corrections (2026-08-28): side-capture apparatus + feasibility quadrature
+
+Three pre-data corrections, each recorded before any RTC2 draw:
+
+1. **No 64-byte squeeze into scifvg_main.py.** The side-capture pass lives in a
+   third hosted module `side_capture.py` (beside `random_time_control.py`). More
+   importantly, the archived strategy-execution code (atomic minute simulator,
+   OCO handling, order submission, EOD/rollover flatten, reconciliation
+   identities) was stripped from `scifvg_main.py`, which collapses 63,936 → 28,131
+   chars. That code is untouched by events_only / discovery_only /
+   random_time_control / side_capture and remains preserved in git history and
+   the `e19b-provisional` / `e19b-r-final` tags. `scifvg_main.py` is now a
+   no-order engine; `initialize` raises on any trading variant.
+2. **Feasibility proof uses the simultaneous max-deviation critical value.**
+   The earlier 0.1496R figure was the sweep-alone dispersion (per-cell bands run
+   ~0.039–0.154R, median 0.075R). The decision rule's actual multiplier —
+   `_cluster_bands`, the 97.5% quantile of the max over all 16 cells of the
+   paired difference under a joint date-cluster bootstrap — measures **0.1974R**
+   from a conservative independent-draw null pairing. It is under 0.2R, so
+   EQUIVALENCE stays reachable, but only just; the permanent feasibility test
+   now uses the identity multiplier and reports the figure as a max-deviation
+   band. The per-cell 1.96·SE frame the user flagged would have been the wrong,
+   narrower interval.
+3. **Side-capture fail-closed population gate.** Because the side-capture pass
+   re-derives the frozen 1,121-event population, it must reproduce it
+   byte-exactly — same per-market counts (NQ 388 / ES 186 / YM 376 / RTY 171),
+   same chart_x identities, same codes, same packed_uint32 — or STOP, never
+   reconcile. `d46_side_capture.py` implements the gate; a negative permanent
+   test proves it can go red on a flipped code, a dropped event, and an
+   off-frozen chart_x. Side/session-type pack into bits 32–33 above the
+   byte-identical low-32-bit FT32 vector (total < 2^52).
+
+The drift headline figures were also corrected in the preregistration: 0.097R
+(NQ) / 0.056R (ES/YM) / 0.024R (RTY) are pure-long; the realistic confound is
+`(2·p_long − 1) × drift_R` = 0.019R at 60/40 and 0.039R at 70/30, so side
+capture is justified by being inside the ±0.2R window and permanently useful,
+not by the headline magnitude. The feasibility proof is re-run at re-freeze,
+after matched side and empirical slots change the dispersion.

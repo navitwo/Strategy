@@ -29,6 +29,10 @@ SOURCES = {
                                ("CONTROL_SPEC_SHA256", "CONTROL_SPECS",
                                 "pack_random_payload",
                                 "advance_random_control"), (), 64000),
+    "side_capture.py": ("side_capture.py",
+                        ("SIDE_CAPTURE_SPEC_VERSION", "pack_side_payload",
+                         "unpack_side_payload", "session_type_for_reclaim_et"),
+                        (), 64000),
 }
 
 

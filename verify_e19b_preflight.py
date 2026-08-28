@@ -92,15 +92,21 @@ check("A8 shadow CISD/FVG/IFVG labels",
       all(t in code_only for t in ("shadow_cisd", "shadow_fvg",
                                    "shadow_ifvg", "_shadow_labels")))
 
-# (9a) fill-based economics with barrier-pure r_gross retained
-check("A9a r_fill drives usd_net; r_gross retained",
-      "r_fill = ((fill_px" in code_only and
-      "usd_net = r_fill * self.risk_dist * pv_qty" in code_only and
-      '"r_gross"' in src)
-# (9b) rollover flatten no longer prices off held quantity
-rol_i = src.find('tag="ROLLOVER-FLATTEN"')
-rol_blk = src[max(0, rol_i - 700):rol_i]
-check("A9b rollover mark not (_m or held)", "(_m or held)" not in rol_blk)
+# (9a) archived strategy-execution code is stripped from the no-order engine:
+# no order submission, atomic minute simulator, OCO handler, or reconcile.
+check("A9a execution layer archived (no orders/atomic/OCO/reconcile)",
+      all(t not in src for t in
+          ("self.limit_order", "def on_order_event",
+           "def _resolve_cycle_minute", "def _reconcile_pnl",
+           "def _fail_closed_flatten")))
+# (9b) EOD/rollover flatten code is archived (no flatten order paths remain)
+check("A9b EOD/rollover flatten archived", all(t not in src for t in
+      ('tag="EOD-FLATTEN', 'tag="ROLLOVER-FLATTEN', "EOD-FLATTEN",
+       "ROLLOVER-FLATTEN")))
+# (9c) the no-order engine keeps events/discovery/random-control/side-capture
+check("A9c no-order + side-capture variants wired",
+      "NO_ORDER_VARIANTS" in src and "side_capture" in src
+      and "random_time_control" in src)
 
 # ---- B. preregistration ----
 pr = open(os.path.join(ROOT, "PREREGISTRATION_E19B.md"), encoding="utf-8").read()
