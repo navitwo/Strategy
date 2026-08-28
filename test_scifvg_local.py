@@ -1573,15 +1573,13 @@ def test_side_capture_pack_roundtrip_and_session_type():
                 assert meta["ft32"] == ft32
                 assert meta["side"] == side
                 assert meta["session_type"] == sess
-    # session-type: the FROZEN holiday-date set flags shifted-schedule sessions
-    # (a pure clock-window test cannot distinguish them: the four affected
-    # events reclaim INSIDE the ordinary window on the shifted schedule).
+    # session-type: the engine packs 0 (bit 33 reserved); the authoritative
+    # holiday flag is assigned in d46 by chart_x == EXCLUDED_HOLIDAY_TS. No
+    # clock/date in-engine test can distinguish the 4 holidays (they reclaim
+    # INSIDE the window on the shifted schedule).
     assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 10, 0)) == 0
-    assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 9, 30)) == 0
-    assert sc.session_type_for_reclaim_et(datetime(2024, 3, 4, 12, 0)) == 0
-    assert sc.session_type_for_reclaim_et(datetime(2011, 2, 21, 16, 5)) == 1
-    assert sc.session_type_for_reclaim_et(datetime(2018, 2, 19, 10, 0)) == 1
-    assert sc.session_type_for_reclaim_et(datetime(2022, 6, 20, 11, 0)) == 1
+    assert sc.session_type_for_reclaim_et(datetime(2011, 2, 21, 16, 5)) == 0
+    assert sc.session_type_for_reclaim_et(datetime(2022, 6, 20, 11, 0)) == 0
     # out-of-range FT32 must fail closed
     try:
         sc.pack_side_payload(1 << 32, 1, 0)
@@ -1634,6 +1632,28 @@ def test_side_capture_population_gate_reproduces_frozen_1121():
     except AssertionError as exc:
         assert "STOP" in str(exc)
     print("PASS side capture: byte-exact 1,121 population gate fail-closed")
+
+
+def test_side_capture_holiday_flag_matches_frozen_exclusion():
+    """The authoritative session-type flag (assigned by d46 keyed on chart_x
+    vs EXCLUDED_HOLIDAY_TS) must flag EXACTLY the four frozen holiday events
+    (3 NQ + 1 ES) and nothing else, matching the conformance finding."""
+    import d46_side_capture as scd
+    from d45_random_time_control import EXCLUDED_HOLIDAY_TS
+    flagged = []
+    for instrument in ("NQ", "ES", "YM", "RTY"):
+        for frozen in scd.load_frozen_ledger(instrument):
+            x = int(frozen["chart_x"])
+            if x in EXCLUDED_HOLIDAY_TS:
+                flagged.append((instrument, x))
+    assert len(flagged) == 4, f"holiday flag count != 4: {flagged}"
+    by_inst = {}
+    for inst, x in flagged:
+        by_inst.setdefault(inst, []).append(x)
+    assert sorted(by_inst) == ["ES", "NQ"]
+    assert len(by_inst["NQ"]) == 3 and len(by_inst["ES"]) == 1
+    assert set(by_inst["NQ"]) == EXCLUDED_HOLIDAY_TS
+    print("PASS side capture: holiday flag == frozen 4-event exclusion")
 
 
 def test_floor_params_in_read_list():
@@ -1707,6 +1727,7 @@ if __name__ == "__main__":
     test_side_capture_pack_roundtrip_and_session_type()
     test_side_capture_drives_real_reclaim_path_and_packs_side()
     test_side_capture_population_gate_reproduces_frozen_1121()
+    test_side_capture_holiday_flag_matches_frozen_exclusion()
     test_discovery_modules_are_byte_verified_deployment_sources()
     test_sync_snapshots_one_stable_multi_file_source_set()
     test_sync_source_reader_preserves_line_ending_bytes()

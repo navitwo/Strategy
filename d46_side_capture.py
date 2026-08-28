@@ -19,6 +19,7 @@ sys.path.insert(0, ROOT)
 os.chdir(ROOT)
 
 from d44_e19b_ft import CELLS, OUTCOME, decode_ft_value
+from d45_random_time_control import EXCLUDED_HOLIDAY_TS
 from qc_api import backtest_create, backtest_list, chart_read, poll_backtest
 from side_capture import SIDE_CAPTURE_SPEC_VERSION, unpack_side_payload
 
@@ -67,13 +68,19 @@ def side_rows_from_chart(instrument, backtest_id, expected_count):
         meta = unpack_side_payload(packed)
         ft32 = meta["ft32"]
         codes = decode_ft_value(ft32)
+        # The authoritative holiday flag is assigned HERE, keyed on the
+        # byte-exact reproduced chart_x against the frozen EXCLUDED_HOLIDAY_TS
+        # (the engine packs 0 in bit 33). This is the only drift-free
+        # discriminator: the four holiday events reclaim INSIDE the ordinary
+        # window on the shifted schedule, so no clock/date test can flag them.
+        session_type = 1 if int(x) in EXCLUDED_HOLIDAY_TS else 0
         rows.append({
             "instrument": instrument, "ft_row": row_index,
             "chart_x": int(x), "packed_exact": packed,
             "packed_uint32": ft32, "codes": codes,
             "cells": {key: OUTCOME[codes[i]]
                       for i, (key, _, _) in enumerate(CELLS)},
-            "side": meta["side"], "session_type": meta["session_type"],
+            "side": meta["side"], "session_type": session_type,
         })
     return rows
 
