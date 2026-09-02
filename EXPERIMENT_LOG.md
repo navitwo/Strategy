@@ -407,7 +407,10 @@ after matched side and empirical slots change the dispersion.
   unreachable at n≈1,104: the old gate checked only the necessary condition
   `half < 0.2R`, while the actual 16-cell rule requires
   `abs(point_i) + half < 0.2R` for every cell. The pre-B 0.1974R half-width was
-  therefore false comfort, not a green feasibility result.
+  therefore false comfort, not a green feasibility result. The corrected
+  deterministic gate measures `max(abs(point)+half) = 0.2122R >= 0.2R` across
+  882 date clusters, and the 200-rep feasibility simulation fired EQUIVALENT
+  below the 80% pre-registered floor.
 - No post-result threshold adjustment is permitted. The control is archived
   because the answer it sought is already implied by the FT32E martingale
   calibration: no robust rejection survives across the pessimistic-to-

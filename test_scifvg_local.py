@@ -1412,10 +1412,15 @@ def test_random_control_stand_down_records_unreachable_equivalence_label():
 
 def test_random_control_archived_launcher_fails_before_cloud_access():
     import d45_random_time_control as driver
-    original_create = driver.backtest_create
+    originals = {name: getattr(driver, name) for name in
+                 ("backtest_create", "backtest_list", "poll_backtest")}
     touched = []
-    driver.backtest_create = lambda *args, **kwargs: touched.append(
-        (args, kwargs))
+    def stub(name):
+        def spy(*args, **kwargs):
+            touched.append(name)
+        return spy
+    for name in originals:
+        setattr(driver, name, stub(name))
     try:
         try:
             driver.main()
@@ -1423,7 +1428,8 @@ def test_random_control_archived_launcher_fails_before_cloud_access():
         except RuntimeError as exc:
             assert "archived" in str(exc).lower()
     finally:
-        driver.backtest_create = original_create
+        for name, fn in originals.items():
+            setattr(driver, name, fn)
     assert touched == []
     print("PASS RTC2 archive: launcher fails before cloud access")
 
