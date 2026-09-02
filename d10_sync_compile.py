@@ -33,6 +33,11 @@ SOURCES = {
                         ("SIDE_CAPTURE_SPEC_VERSION", "pack_side_payload",
                          "unpack_side_payload", "session_type_for_reclaim_et"),
                         (), 64000),
+    "event_generators.py": ("event_generators.py",
+                            ("SweepReclaimGeneratorV1",
+                             "OvernightLevelTouchV1", "pack_campaign2_ft",
+                             "build_event_generator"),
+                            (), 64000),
 }
 
 

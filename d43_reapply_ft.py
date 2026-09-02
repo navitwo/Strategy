@@ -30,6 +30,9 @@ TARGETS = {
     "side_capture.py": ((b"SIDE_CAPTURE_SPEC_VERSION", b"pack_side_payload",
                          b"unpack_side_payload",
                          b"session_type_for_reclaim_et"), (), 64000),
+    "event_generators.py": ((b"SweepReclaimGeneratorV1",
+                             b"OvernightLevelTouchV1", b"pack_campaign2_ft",
+                             b"build_event_generator"), (), 64000),
 }
 
 

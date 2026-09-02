@@ -395,3 +395,45 @@ The drift headline figures were also corrected in the preregistration: 0.097R
 capture is justified by being inside the ±0.2R window and permanently useful,
 not by the headline magnitude. The feasibility proof is re-run at re-freeze,
 after matched side and empirical slots change the dispersion.
+
+## 2026-09-01 — Campaign 1 administrative closeout: RTC2 stood down
+
+- The CME early-close conformance correction is retained: 13 additional rows
+  are excluded symmetrically after the four holiday rows, reducing the paired
+  population from 1,117 to 1,104. `EARLY_CLOSE_DATES`, the empirical slot
+  histogram, control/side specifications, and their SHA identities are frozen;
+  the driver derives both arms from the same final source population.
+- RTC2 was **not** run to completion. Its equivalence label is structurally
+  unreachable at n≈1,104: the old gate checked only the necessary condition
+  `half < 0.2R`, while the actual 16-cell rule requires
+  `abs(point_i) + half < 0.2R` for every cell. The pre-B 0.1974R half-width was
+  therefore false comfort, not a green feasibility result.
+- No post-result threshold adjustment is permitted. The control is archived
+  because the answer it sought is already implied by the FT32E martingale
+  calibration: no robust rejection survives across the pessimistic-to-
+  optimistic ambiguity interval. Campaign 1 is administratively closed;
+  strategy backtests, optimization, validation, and holdout remain locked.
+
+## 2026-09-01 — Campaign 2 pre-data framework frozen
+
+- `C2-ONLT-v1` moves the pluggable seam to event detection. The exact
+  five-field `EventGenerator` contract is frozen before any market-data pull.
+  `generator_v1` must fail closed unless all 1,121 committed E19B-R FT rows
+  retain identical market counts, `chart_x`, 16 codes, and `packed_uint32`.
+- New detector: `overnight_level_touch_v1`; NQ + GC, completed 30-minute bars,
+  complete 18:00→09:30 overnight, first bare high/low touch in 09:30→12:30,
+  one event per level, both reversal and continuation arms. No reclaim, bias,
+  CISD/FVG/IFVG, depth, or strategy gate is present.
+- Context transport adds overnight width (points and ATR fraction) and ET touch
+  time. They are conditioning variables only; no threshold or bin is selectable
+  in this phase.
+- Honest prior: NQ is closely related to the liquidity-reference population
+  already shown to be a coin flip, so its prior is poor. GC is genuinely
+  untested, and the bare-touch population without reclaim is a new question.
+- Sole primary is the paired reversal-minus-continuation contrast at T2S0.5,
+  H=120m, pessimistic stop-first, bounded per-arm payoff, session-date clustered,
+  θ=±0.2R. Everything else is exploratory. The classifier must demonstrate
+  POSITIVE (both directions), NULL, and INCONCLUSIVE reachability by fixed-seed
+  simulation at achievable n before any launch.
+- No market data has been pulled and no cloud run, strategy backtest,
+  optimization, validation, or holdout access is authorized by this entry.

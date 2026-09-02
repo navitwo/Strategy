@@ -1,10 +1,20 @@
-# RTC2 SAME-DATE RANDOM-TIME FT CONTROL — FROZEN PREREGISTRATION
+# RTC2 SAME-DATE RANDOM-TIME FT CONTROL — ARCHIVED / STOOD DOWN
 
-**Status:** FROZEN BEFORE REMOTE COMPILE OR EXPORT. No RTC1/RTC2 random-time
-cloud run existed when this revision was authored. The only authorized remote
-experiments are the four no-order development exports specified below (plus the
-side-capture events-only pass described in the amendment). Strategy backtests,
-optimization, validation, and holdout remain locked.
+> **Administrative closeout — 2026-09-01.** Campaign 1 is closed and RTC2
+> was deliberately not run to completion. The symmetric CME early-close
+> exclusion reduced the paired population from 1,117 to 1,104 rows, but did
+> not cause the stop: the former feasibility gate was already invalid because
+> it treated `half < 0.2R` as sufficient. The frozen equivalence label requires
+> `abs(point_i) + half < 0.2R` in every one of 16 cells and is unreachable at
+> n≈1,104. No threshold or rule was changed after observing this. The control's
+> intended scientific answer is already implied by the independent FT32E
+> martingale calibration: no robust rejections survive across the pessimistic
+> to optimistic ambiguity interval. RTC2 is archived; no cloud cycle, strategy
+> backtest, optimization, validation, or holdout use is owed.
+
+**Final status:** ARCHIVED / NO REMOTE RUN AUTHORIZED. The historical design
+below is retained for audit, but its launcher now fails closed before cloud
+access. Strategy backtests, optimization, validation, and holdout remain locked.
 
 ## Pre-data amendments (2026-08-28)
 
@@ -101,7 +111,8 @@ FT32 vector, keeping the total payload below `2^52`.
 
 - Instruments, in order: `NQ`, `ES`, `YM`, `RTY`.
 - Dates submitted: `2010-01-01` through `2024-12-31`, `run_segment=dev`.
-- Each aligned E19B-R H=120 source row (after the four-event holiday exclusion)
+- Each aligned E19B-R H=120 source row (after the four-event holiday exclusion
+  and the symmetric frozen early-close-calendar exclusion)
   contributes its market, unique source session date, exact observed
   `risk_dist`, and exact captured side.
 - On that same market/date, one completed five-minute bar EndTime is drawn from
@@ -128,28 +139,28 @@ FT32 vector, keeping the total payload below `2^52`.
   horizon-slippage path fails the run rather than resolving on a later bar or
   redrawing a timestamp.
 
-Frozen counts (after the four-event holiday exclusion):
+Final frozen counts (after holiday and early-close exclusions):
 
 | Market | Source/control pairs |
 |---|---:|
-| NQ | 385 |
-| ES | 185 |
-| YM | 376 |
-| RTY | 171 |
-| **Total** | **1,117** |
+| NQ | 379 |
+| ES | 183 |
+| YM | 374 |
+| RTY | 168 |
+| **Total** | **1,104** |
 
 Canonical market/date/risk control-spec SHA-256:
-`65b05e0f4c3d1d3f40e766b6b20990115c998e8091b759cc15232cbb066a4856`
+`43536aaeb12d581ae93097adced23c3990c8abc7150162598a47309f4989d2bd`
 
 Canonical captured-side SHA-256 (SIDE_SPECS, nested by instrument then
 `chart_x`; `chart_x` collides across markets so the key is never flat):
-`1b2b0364a2a98ac964d8242a06aa96d7a61ffca9f318391875f6bad2e4d5c234`
+`dc82724c4b8783ce78d95fc6406a1d4fe932a3c6f6cee1563f4ddf0ef9ad5552`
 
 Canonical risk-only SHA-256:
-`b1fd70ed4f266b1ea1d11c72edbb947078f7394f18261ec22046de37b3c354e8`
+`30f70fba4934a71c090083d9c5f145e879000a94f51d5368e92e3876188c8664`
 
 Canonical slot-histogram SHA-256:
-`47f7cf4b862b7de4677ce1d3d385fb9b71e3de36e304a2b75ac1f532c9adee2c`
+`c70918bc7e94f1aa94218a1466dcac9230792abe72f6bf9aecdc59bb6a03a967`
 
 Source event-ledger SHA-256 values:
 
@@ -296,16 +307,7 @@ Each market must satisfy all of the following before any row counts as evidence:
 9. exact offline regeneration of the screen after rereading the four persisted
    ledgers and run records.
 
-Duplicate-name protection: remote experiment names are checked before launch
-and re-checked immediately before each `backtest_create`. The QuantConnect API
-offers no atomic create-time uniqueness, so a truly concurrent second launcher
-remains a residual operational risk that is mitigated by the single-invocation
-launch discipline in this document (one driver process, four creates, no
-manual parallel launch).
-
-Before launch, this preregistration, hosted source bundle, driver, and permanent
-tests must be committed, pushed, locally green, independently reviewed, and
-byte-identical to the remotely compiled bundle. Duplicate experiment names
-fail before creation. Exactly four full development exports are authorized
-(after the side-capture pass); no discovery-family export, smoke export,
-strategy backtest, optimization, validation, or holdout run is authorized.
+The historical duplicate-name and launch protocol is superseded by the
+administrative closeout. `d45_random_time_control.main()` raises immediately;
+zero RTC2 exports, discovery exports, smoke exports, strategy backtests,
+optimization, validation, or holdout runs are authorized.

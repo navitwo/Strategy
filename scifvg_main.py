@@ -6,6 +6,8 @@ import json
 from event_predicates import (resolve_event_predicates,
     validate_discovery_predicates, evaluate_event_predicates,
     pack_discovery_payload)
+from event_generators import (SweepReclaimGeneratorV1,
+    build_event_generator, pack_campaign2_context, pack_campaign2_ft)
 from scifvg_config import (FT_CELLS, CONFIG_KEYS, CONFIG_DEFAULTS, FUNNEL_KEYS,
                            canonical_identity_config)
 import random_time_control as rtc
@@ -23,6 +25,7 @@ INSTRUMENT_SPECS = {
     "ES":  (Futures.Indices.SP_500_E_MINI,            0.25, 50.0),
     "YM":  (Futures.Indices.DOW_30_E_MINI,           1.00,  5.0),
     "RTY": (Futures.Indices.RUSSELL_2000_E_MINI,     0.10, 50.0),
+    "GC":  (Futures.Metals.GOLD,                     0.10, 100.0),
 }
 
 NO_ORDER_VARIANTS = ("events_only", "discovery_only", "side_capture")
@@ -50,7 +53,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             else:
                 cfg[k] = int(float(rv))
 
-        if rtc.configure_random_control(cfg):
+        generator_name = str(cfg.get("event_generator", "generator_v1"))
+        if generator_name == "overnight_level_touch_v1":
+            self.event_predicate_names = ()
+        elif rtc.configure_random_control(cfg):
             self.event_predicate_names = ()
         elif sidecap.configure_side_capture(cfg):
             self.event_predicate_names = resolve_event_predicates(
@@ -115,10 +121,16 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             contract_depth_offset=0)
         self.fut.set_filter(timedelta(0), timedelta(days=182))
 
-        self.consolidate(self.fut.symbol, timedelta(minutes=5),
-                         self._on_5m_consolidated)
-
         self.tick = tick_sz
+        self.event_generator = build_event_generator(
+            generator_name, self.tick, int(cfg.get("event_atr_period", 14)))
+        event_minutes = int(cfg.get("event_bar_minutes", 5))
+        expected_minutes = 30 if generator_name == "overnight_level_touch_v1" else 5
+        if event_minutes != expected_minutes:
+            raise RuntimeError(f"{generator_name} requires {expected_minutes}m bars")
+        handler = (self._on_30m_consolidated if event_minutes == 30
+                   else self._on_5m_consolidated)
+        self.consolidate(self.fut.symbol, timedelta(minutes=event_minutes), handler)
 
         wh, wm = str(cfg["window_start_et"]).split(":")
         eh, em = str(cfg["window_end_et"]).split(":")
@@ -360,27 +372,17 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if not predicate_mask:
                 self.setup = None
                 return
-            self._ev_seq = getattr(self, "_ev_seq", 0) + 1
-            self._ev_candidates.append({
-                "event_id": f"{self.exp_hash}-{self._ev_seq:06d}",
-                "bias_aligned": bool(s.get("bias_aligned",
-                                           self.bias == side)),
-                "side": side,
-                "date": str(getattr(et, "date",
-                                    lambda: et)()),
-                "ts0": _now_ts,
-                # session-type is the RECLAIM bar's own clock time (not the
-                # later resolution bar): 0 inside the 09:30-12:00 window,
-                # 1 for a holiday / shifted-schedule session.
+            generator = getattr(self, "event_generator", None)
+            if not isinstance(generator, SweepReclaimGeneratorV1):
+                raise RuntimeError("frozen sweep path requires generator_v1")
+            generated = generator.from_reclaim(
+                et, side, lvl, b["close"], stop, context)
+            self._accept_generated_event(generated, {
+                "entry_px": float(b["close"]), "stop_px": float(stop),
                 "session_type": sidecap.session_type_for_reclaim_et(et),
-                "px": float(b["close"]),
-                "stop_px": float(stop), "risk_dist": float(dist),
-                "idx0": self._abs_now,
-                "remaining": set(self.cfg.get("event_horizons", [120])),
-                "mfe_r": 0.0, "mae_r": 0.0, "ft": {},
                 "event_predicate_mask": predicate_mask,
-                "event_predicate_names": list(
-                    self.event_predicate_names), **labels})
+                "event_predicate_names": list(self.event_predicate_names),
+                **labels})
             self.setup = None
             return
         if idx >= s["reclaim_deadline"]:
@@ -423,6 +425,49 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 "shadow_fvg": fvg is not None,
                 "shadow_ifvg": ifvg}
 
+    def _accept_generated_event(self, event, extra=None):
+        timestamp, side, reference, risk_dist, context = event
+        context = dict(context)
+        if extra:
+            context.update(extra)
+        self._ev_seq = getattr(self, "_ev_seq", 0) + 1
+        event_id = f"{self.exp_hash}-{self._ev_seq:06d}"
+        directions = [(int(side), None)]
+        if context.get("resolve_both_directions"):
+            directions = [(int(side), "reversal"), (-int(side), "continuation")]
+        for resolved_side, arm in directions:
+            px = float(context.get("entry_px", reference))
+            stop = float(context.get(
+                "stop_px", px - resolved_side * float(risk_dist)))
+            aligned = bool(context.get("bias_aligned", True)) if arm is None \
+                else arm == "reversal"
+            candidate = {
+                "event_id": event_id, "generator": context.get(
+                    "generator", "generator_v1"),
+                "bias_aligned": aligned, "side": resolved_side,
+                "arm": arm, "date": str(timestamp.date()),
+                "ts0": int(timestamp.timestamp()),
+                "event_et": str(timestamp),
+                "session_type": int(context.get("session_type", 0)),
+                "reference_level": float(reference),
+                "px": px, "stop_px": stop, "risk_dist": float(risk_dist),
+                "idx0": self._abs_now,
+                "remaining": set(self.cfg.get("event_horizons", [120])),
+                "mfe_r": 0.0, "mae_r": 0.0, "ft": {},
+                "event_predicate_mask": int(context.get(
+                    "event_predicate_mask", 1)),
+                "event_predicate_names": list(context.get(
+                    "event_predicate_names", ["sweep_reclaim_v1"])),
+            }
+            for key in ("shadow_cisd", "shadow_fvg", "shadow_ifvg",
+                        "level_kind", "session_date",
+                        "overnight_range_points", "overnight_range_atr",
+                        "touch_time_et", "touch_minute_et",
+                        "roll_generation"):
+                if key in context:
+                    candidate[key] = context[key]
+            self._ev_candidates.append(candidate)
+
     def _advance_events(self, agg):
         if not self._ev_candidates:
             return
@@ -451,8 +496,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                         "event_id": ev["event_id"],
                         "last_reclaim_et": str(agg.get("et")),
                         "bias_aligned": ev["bias_aligned"],
-                        "arm": "counter" if not ev["bias_aligned"]
-                               else "primary",
+                        "arm": ev.get("arm") or (
+                            "counter" if not ev["bias_aligned"] else "primary"),
                         "side": ev["side"], "date": ev["date"],
                         "session_type": ev.get("session_type", 0),
                         "h_min": h, "ret_r": round(ret_r, 6),
@@ -469,8 +514,13 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                             "event_predicate_mask", 1),
                         "event_predicate_names": ev.get(
                             "event_predicate_names", ["sweep_reclaim_v1"]),
-                        **{k: ev.get(k) for k in
-                           ("shadow_cisd", "shadow_fvg", "shadow_ifvg")}})
+                        **{k: ev.get(k) for k in (
+                           "shadow_cisd", "shadow_fvg", "shadow_ifvg",
+                           "generator", "reference_level", "event_et",
+                           "level_kind", "session_date",
+                           "overnight_range_points", "overnight_range_atr",
+                           "touch_time_et", "touch_minute_et",
+                           "roll_generation") if k in ev}})
                     ev["remaining"].discard(h)
             if ev["remaining"]:
                 still.append(ev)
@@ -555,10 +605,40 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 self._inc(f"{K}_cancel_window")
                 self.setup = None
 
+    def _on_30m_consolidated(self, consolidated):
+        et = consolidated.end_time
+        self._abs_event_bar = getattr(self, "_abs_event_bar", -1) + 1
+        self._abs_now = self._abs_event_bar
+        agg = {"open": float(consolidated.open),
+               "high": float(consolidated.high),
+               "low": float(consolidated.low),
+               "close": float(consolidated.close),
+               "et": et, "ts": int(et.timestamp()),
+               "idx": self._abs_event_bar, "abs": self._abs_event_bar}
+        # Advance prior events first: the touch bar cannot leak pre-touch range
+        # into post-event MFE/MAE or first-touch outcomes.
+        self._advance_events(agg)
+        events = self.event_generator.on_bar(agg)
+        if et.date() >= self.camp_start:
+            for event in events:
+                self._accept_generated_event(event)
+
+    def on_symbol_changed_events(self, changes):
+        generator = getattr(self, "event_generator", None)
+        if generator is None or not hasattr(generator, "on_rollover"):
+            return
+        for change in changes.values():
+            generator.on_rollover(self.time, str(change.old_symbol),
+                                  str(change.new_symbol))
+            self._inc("rollovers")
+
     def _export_charts(self):
         local,fx={},{}
         fc, fs = Chart("E19B-FT"), Series("a", SeriesType.SCATTER)
         fc.add_series(fs)
+        c2 = str(self.cfg.get("event_generator")) == "overnight_level_touch_v1"
+        cc, cs, cx = Chart("C2-context"), Series("a", SeriesType.SCATTER), {}
+        cc.add_series(cs)
         self._n_ft_rows=0
         variant = str(self.cfg.get("variant"))
         rc = variant == "random_time_control"
@@ -574,7 +654,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                     | int(bool(e.get("shadow_fvg"))) << 1
                     | int(bool(e.get("shadow_ifvg"))) << 2)
             if e["h_min"] == 120 and (sname == "a" or
-                    variant == "discovery_only"):
+                    variant == "discovery_only" or c2):
                 p = 0
                 for i2, (k2, _, _) in enumerate(FT_CELLS):
                     v = e.get("ft", {}).get(k2)
@@ -588,9 +668,17 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 elif variant == "side_capture":
                     p = sidecap.pack_side_payload(
                         p, e.get("side"), e.get("session_type", 0))
+                elif c2:
+                    p = pack_campaign2_ft(
+                        p, e["arm"], e["level_kind"])
                 x = fx.get(ts_dt, 0); fx[ts_dt] = x + 1
                 fs.add_point(ts_dt + timedelta(seconds=x), float(p))
                 self._n_ft_rows += 1
+                if c2 and e["arm"] == "reversal":
+                    event_dt = datetime.fromisoformat(e["event_et"])
+                    cp = pack_campaign2_context(e, self.tick)
+                    x2 = cx.get(event_dt, 0); cx[event_dt] = x2 + 1
+                    cs.add_point(event_dt + timedelta(seconds=x2), float(cp))
             if e["h_min"]==120:continue
             if cname not in local:
                 ch = Chart(cname)
@@ -609,6 +697,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                 sr.add_point(ts_dt, float(v))
         for ch in local.values():self.add_chart(ch)
         self.add_chart(fc)
+        if c2:
+            self.add_chart(cc)
 
     def on_end_of_algorithm(self):
         held = 0

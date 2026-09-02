@@ -99,7 +99,8 @@ class Chart:
 
 Futures = types.SimpleNamespace(Indices=types.SimpleNamespace(
     NASDAQ_100_E_MINI="NQ", MICRO_NASDAQ_100_E_MINI="MNQ",
-    SP_500_E_MINI="ES", DOW_30_E_MINI="YM", RUSSELL_2000_E_MINI="RTY"))
+    SP_500_E_MINI="ES", DOW_30_E_MINI="YM", RUSSELL_2000_E_MINI="RTY"),
+    Metals=types.SimpleNamespace(GOLD="GC"))
 Resolution = types.SimpleNamespace(MINUTE="minute")
 DataMappingMode = types.SimpleNamespace(OPEN_INTEREST=0)
 DataNormalizationMode = types.SimpleNamespace(RAW=0)
@@ -174,6 +175,8 @@ def make_alg():
     a.cfg.setdefault("event_horizons", [120])
     a.cfg.setdefault("counter_bias_arm", False)
     a.event_predicate_names = ("sweep_reclaim_v1",)
+    from event_generators import SweepReclaimGeneratorV1
+    a.event_generator = SweepReclaimGeneratorV1()
     a.tick = 0.25
     a.point_value = 2.0
     a.slippage_ticks = int(a.cfg["slippage_ticks"])
@@ -1151,30 +1154,36 @@ def test_random_time_control_spec_exactly_matches_committed_risk_distribution():
     import hashlib
     from datetime import timezone
     import random_time_control as rtc
+    from scifvg_config import EARLY_CLOSE_DATES
     observed, observed_specs = {}, {}
     excluded_ts = {1298311500, 1519063500, 1655748300}
-    excluded_count = 0
+    holiday_excluded = 0
+    early_close_excluded = 0
     for instrument in ("NQ", "ES", "YM", "RTY"):
         path = f"e19br_ledgers/{instrument}_events.jsonl"
         rows = [json.loads(line) for line in open(path, encoding="utf-8")
                 if line.strip()]
-        observed[instrument] = [float(row["risk_dist"]) for row in rows
-            if int(row["h_min"]) == 120 and row["arm"] == "primary"
-            and int(row["ts"]) not in excluded_ts]
-        primary = [row for row in rows
-                   if int(row["h_min"]) == 120 and row["arm"] == "primary"
-                   and int(row["ts"]) not in excluded_ts]
-        excluded_count += sum(1 for row in rows
-                              if int(row["h_min"]) == 120
-                              and row["arm"] == "primary"
-                              and int(row["ts"]) in excluded_ts)
-        observed_specs[instrument] = [(
-            int(row["ts"]),
-            datetime.fromtimestamp(int(row["ts"]), timezone.utc).date().isoformat(),
-            float(row["risk_dist"])) for row in primary]
+        primary = []
+        for row in rows:
+            if int(row["h_min"]) != 120 or row["arm"] != "primary":
+                continue
+            ts = int(row["ts"])
+            if ts in excluded_ts:
+                holiday_excluded += 1
+                continue
+            dstr = datetime.fromtimestamp(
+                ts, timezone.utc).date().isoformat()
+            if dstr in EARLY_CLOSE_DATES:
+                early_close_excluded += 1
+                continue
+            primary.append((ts, dstr, float(row["risk_dist"])))
+        observed[instrument] = [r[2] for r in primary]
+        observed_specs[instrument] = primary
         assert hashlib.sha256(open(path, "rb").read()).hexdigest() == \
             rtc.SOURCE_LEDGER_SHA256[instrument]
-    assert excluded_count == 4, f"holiday exclusion should drop 4 events: {excluded_count}"
+    assert holiday_excluded == 4, f"holiday exclusion drops 4: {holiday_excluded}"
+    assert early_close_excluded == 13, \
+        f"early-close exclusion drops 13: {early_close_excluded}"
     assert observed == {key: list(values)
                         for key, values in rtc.RISK_DISTS.items()}
     assert observed_specs == {key: list(values)
@@ -1194,7 +1203,7 @@ def test_random_control_matched_side_binds_every_source_row():
     import side_capture as sc
     sc.validate_side_spec()
     assert {k: len(v) for k, v in sc.SIDE_SPECS.items()} == {
-        "NQ": 385, "ES": 185, "YM": 376, "RTY": 171}
+        "NQ": 379, "ES": 183, "YM": 374, "RTY": 168}
     # every control row has a matched side and build_control_plans returns it
     for instrument in ("NQ", "ES", "YM", "RTY"):
         plans = rtc.build_control_plans(
@@ -1219,7 +1228,7 @@ def test_random_control_side_spec_sha_is_frozen_and_tamper_fails():
     import side_capture as sc
     assert sc.canonical_side_spec_sha256() == sc.SIDE_SPEC_SHA256
     assert sc.SIDE_SPEC_SHA256 == (
-        "1b2b0364a2a98ac964d8242a06aa96d7a61ffca9f318391875f6bad2e4d5c234")
+        "dc82724c4b8783ce78d95fc6406a1d4fe932a3c6f6cee1563f4ddf0ef9ad5552")
     tampered = {k: dict(v) for k, v in sc.SIDE_SPECS.items()}
     first_x = next(iter(tampered["NQ"]))
     tampered["NQ"][first_x] = -tampered["NQ"][first_x]
@@ -1235,10 +1244,11 @@ def test_random_control_side_spec_sha_is_frozen_and_tamper_fails():
 def test_random_control_driver_fail_closed_and_surface_identity():
     import d45_random_time_control as driver
     import random_time_control as rtc
-    _hol = {1298311500, 1519063500, 1655748300}
-    source_nq = [json.loads(line) for line in open(
-        "e19br_ft_ledger/NQ_ft.jsonl", encoding="utf-8") if line.strip()
-        if int(json.loads(line)["chart_x"]) not in _hol]
+    _keep_x = {int(spec[0]) for spec in rtc.CONTROL_SPECS["NQ"]}
+    _raw_nq = [json.loads(line) for line in open(
+        "e19br_ft_ledger/NQ_ft.jsonl", encoding="utf-8") if line.strip()]
+    _by_x = {int(row["chart_x"]): row for row in _raw_nq}
+    source_nq = [_by_x[int(spec[0])] for spec in rtc.CONTROL_SPECS["NQ"]]
     plans = rtc.build_control_plans("NQ", rtc.CONTROL_SPECS["NQ"], rtc.SEED)
     nq = []
     for index, (row, plan) in enumerate(zip(source_nq, plans)):
@@ -1248,15 +1258,15 @@ def test_random_control_driver_fail_closed_and_surface_identity():
             chart_x=driver.expected_chart_x_values(
                 plan["date"], plan["window_index"])[0]))
     runtime = {
-        "event_predicates": "", "d_ev_results": "385", "n_ft_rows": "385",
+        "event_predicates": "", "d_ev_results": "379", "n_ft_rows": "379",
         "random_control_spec_version": rtc.SPEC_VERSION,
         "random_control_seed": rtc.SEED,
         "random_control_risk_sha256": rtc.RISK_SPEC_SHA256,
         "random_control_slot_sha256": rtc.SLOT_SPEC_SHA256,
         "random_control_spec_sha256": rtc.CONTROL_SPEC_SHA256,
         "random_control_side_sha256": rtc.SIDE_SPEC_SHA256,
-        "random_control_target": "385", "random_control_eligible": "11550",
-        "random_control_started": "385", "random_control_resolved": "385",
+        "random_control_target": "379", "random_control_eligible": "11370",
+        "random_control_started": "379", "random_control_resolved": "379",
         "random_control_invalid": "0", "random_control_order_purpose_count": "0",
         "d_cycles_opened": "0", "d_n_fillevents": "0",
         "f_L_submits": "0", "f_S_submits": "0", "f_L_fills": "0",
@@ -1290,10 +1300,11 @@ def test_random_control_driver_fail_closed_and_surface_identity():
         assert str(exc) != "per-market nonmonotone surface accepted"
     rows = []
     for instrument in ("NQ", "ES", "YM", "RTY"):
-        source = [json.loads(line) for line in open(
+        _raw = [json.loads(line) for line in open(
             f"e19br_ft_ledger/{instrument}_ft.jsonl", encoding="utf-8")
             if line.strip()]
-        source = [row for row in source if int(row["chart_x"]) not in _hol]
+        _by_x = {int(row["chart_x"]): row for row in _raw}
+        source = [_by_x[int(spec[0])] for spec in rtc.CONTROL_SPECS[instrument]]
         market_plans = rtc.build_control_plans(
             instrument, rtc.CONTROL_SPECS[instrument], rtc.SEED)
         rows.extend(dict(row, source_index=index, side=plan["side"],
@@ -1356,25 +1367,12 @@ def test_random_control_comparison_executes_all_frozen_branches():
         "INCONCLUSIVE_SURFACE_DIFFERENCE"
     print("PASS random control driver: equivalent/tradable/null/inconclusive")
 
-def test_random_control_decision_rule_labels_reachable_given_observed_dispersion():
-    # Feasibility proof (PROTOCOL rule): every outcome label is reachable
-    # given the observed dispersion, using the SAME simultaneous max-deviation
-    # critical value the frozen decision rule uses -- _cluster_bands, i.e. the
-    # 97.5% quantile of the max over all 16 cells of |bootstrap_difference -
-    # observed_difference| under a joint date-cluster bootstrap. The rule's
-    # width is NOT a per-cell 1.96*SE interval: per-cell bands here run
-    # ~0.039-0.154R while the simultaneous max-deviation is a single value
-    # (~0.15-0.20R) that already carries the 16-way multiplicity. The old
-    # stacked ambiguity bracket (event_pess-control_opt to event_opt-control_pess)
-    # was structurally unable to reach EQUIVALENT because it stacked two
-    # worst-case ambiguity widths (sweep-side alone 0.3133R at T0.5/S0.5).
-    # Pre-data, the paired difference dispersion is proxied by pairing each
-    # E19B-R row with another row from the SAME instrument (offset-by-1
-    # permutation): an independent draw from the same surface. That OVERstates
-    # the true same-date random-time control's difference dispersion (adjacent
-    # sessions inject between-session variance a within-session random-time
-    # draw lacks), so it is a conservative bound. EQUIVALENT is reachable iff
-    # pess_half < FRICTION_R so a zero difference CI lies inside +/-0.2R.
+def test_random_control_stand_down_records_unreachable_equivalence_label():
+    # Administrative closeout gate. The former proof checked only the
+    # necessary condition half < theta. The frozen label actually requires
+    # abs(point_i) + half < theta for every one of 16 cells. At n~=1,104 the
+    # offset-pair proxy cannot satisfy that sufficient condition, so RTC2 is
+    # deliberately stood down rather than launched or re-specified.
     import d45_random_time_control as driver
     from d44_e19b_ft import summarize_ft_rows
     sweep_rows = driver._load_sweep_rows(full=False)
@@ -1403,13 +1401,31 @@ def test_random_control_decision_rule_labels_reachable_given_observed_dispersion
     pess_half, opt_half, rate_half, nclusters = driver._cluster_bands(
         pairs, observed)
     assert nclusters >= 1
-    assert pess_half < driver.FRICTION_R, (
-        f"simultaneous 16-cell max-deviation band {pess_half:.4f}R is not "
-        f"< {driver.FRICTION_R}R: EQUIVALENCE is structurally unreachable")
-    print(f"PASS feasibility: simultaneous 16-cell max-deviation band "
-          f"pess_half={pess_half:.4f}R < {driver.FRICTION_R}R "
-          f"({nclusters} date clusters); sweep_best_pess="
-          f"{sweep_best_pess:.4f}R")
+    max_required = max(abs(value) + pess_half for value in observed[0])
+    assert max_required >= driver.FRICTION_R, (
+        "stand-down premise changed: equivalence unexpectedly reachable")
+    assert len(sweep_rows) == 1104
+    print(f"PASS RTC2 stand-down: max(abs(point)+half)={max_required:.4f}R "
+          f">= {driver.FRICTION_R}R ({nclusters} date clusters); "
+          f"sweep_best_pess={sweep_best_pess:.4f}R")
+
+
+def test_random_control_archived_launcher_fails_before_cloud_access():
+    import d45_random_time_control as driver
+    original_create = driver.backtest_create
+    touched = []
+    driver.backtest_create = lambda *args, **kwargs: touched.append(
+        (args, kwargs))
+    try:
+        try:
+            driver.main()
+            raise AssertionError("archived RTC2 launcher did not fail closed")
+        except RuntimeError as exc:
+            assert "archived" in str(exc).lower()
+    finally:
+        driver.backtest_create = original_create
+    assert touched == []
+    print("PASS RTC2 archive: launcher fails before cloud access")
 
 
 def test_discovery_modules_are_byte_verified_deployment_sources():
@@ -1417,7 +1433,8 @@ def test_discovery_modules_are_byte_verified_deployment_sources():
     sync = open("d10_sync_compile.py").read()
     guard = open("d43_reapply_ft.py").read()
     for name in ("scifvg_main.py", "event_predicates.py", "scifvg_config.py",
-                 "random_time_control.py", "side_capture.py"):
+                 "random_time_control.py", "side_capture.py",
+                 "event_generators.py"):
         assert name in sync, f"sync omits {name}"
         assert name in guard, f"restore guard omits {name}"
     for marker in ("validate_discovery_predicates", "canonical_identity_config",
@@ -1773,7 +1790,8 @@ if __name__ == "__main__":
     test_random_control_driver_rejects_off_grid_and_wrong_date_chart_x()
     test_random_control_launch_guard_allows_only_compile_id_after_compile()
     test_random_control_comparison_executes_all_frozen_branches()
-    test_random_control_decision_rule_labels_reachable_given_observed_dispersion()
+    test_random_control_stand_down_records_unreachable_equivalence_label()
+    test_random_control_archived_launcher_fails_before_cloud_access()
     test_side_capture_pack_roundtrip_and_session_type()
     test_side_capture_drives_real_reclaim_path_and_packs_side()
     test_side_capture_population_gate_reproduces_frozen_1121()

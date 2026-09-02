@@ -1,4 +1,4 @@
-"""Run, retrieve, and compare the frozen same-date random-time FT control."""
+"""Archived RTC2 analysis/decoder helpers; cloud launch is disabled."""
 import hashlib
 import json
 import math
@@ -22,7 +22,8 @@ from random_time_control import (CONTROL_SPECS, CONTROL_SPEC_SHA256,
     RISK_SPEC_SHA256, SLOT_SPEC_SHA256, SLOT_COUNTS, SEED, SPEC_VERSION,
     build_control_plans, unpack_random_payload)
 from side_capture import SIDE_SPEC_SHA256
-from scifvg_config import CONFIG_DEFAULTS, canonical_identity_config
+from scifvg_config import (CONFIG_DEFAULTS, EARLY_CLOSE_DATES,
+                           canonical_identity_config)
 
 PID = 35506697
 INSTRUMENTS = ("NQ", "ES", "YM", "RTY")
@@ -179,8 +180,11 @@ def _load_sweep_rows(full=True):
         with open(path, encoding="utf-8") as handle:
             market = [json.loads(line) for line in handle if line.strip()]
         if not full:
-            market = [row for row in market
-                      if int(row["chart_x"]) not in EXCLUDED_HOLIDAY_TS]
+            # CONTROL_SPECS is the final symmetric population after holiday
+            # and CME early-close exclusions. Preserve its exact order.
+            by_x = {int(row["chart_x"]): row for row in market}
+            market = [by_x[int(spec[0])]
+                      for spec in CONTROL_SPECS[instrument]]
         assert len(market) == expected[instrument]
         for source_index, row in enumerate(market):
             assert row.get("instrument") == instrument, (
@@ -316,7 +320,7 @@ def build_comparison_payload(results, random_rows, sweep_payload,
     random_by_key = {(row["instrument"], row["source_index"]): row
                      for row in random_rows}
     sweep_rows = _load_sweep_rows(full=False)
-    assert len(random_by_key) == len(sweep_rows) == 1117
+    assert len(random_by_key) == len(sweep_rows) == 1104
     pairs = []
     for sweep in sweep_rows:
         key = (sweep["instrument"], sweep["source_index"])
@@ -336,9 +340,12 @@ def build_comparison_payload(results, random_rows, sweep_payload,
     pess_half, opt_half, rate_half, cluster_count = _cluster_bands(
         pairs, observed, bootstrap_reps)
     pess, opt, decision, ambiguity = observed
-    sweep_best_pessimistic = max(sweep_payload["cells"][key][
+    # Symmetric population: best-cell statistics come from the same
+    # early-close-filtered sweep rows as the paired comparison, never the
+    # unfiltered 1,121-row committed screen.
+    sweep_best_pessimistic = max(sweep_screen[key][
         "mean_R_per_unit_risked_pessimistic"] for key, _, _ in CELLS)
-    sweep_best_optimistic = max(sweep_payload["cells"][key][
+    sweep_best_optimistic = max(sweep_screen[key][
         "mean_R_per_unit_risked_optimistic"] for key, _, _ in CELLS)
     classification, material_cells = classify_surface(
         pess, opt, decision, ambiguity, pess_half, rate_half,
@@ -379,6 +386,7 @@ def build_comparison_payload(results, random_rows, sweep_payload,
         "slot_spec_sha256": SLOT_SPEC_SHA256,
         "side_spec_sha256": SIDE_SPEC_SHA256,
         "excluded_holiday_sessions": list(EXCLUDED_HOLIDAY_DATES),
+        "excluded_early_close_sessions": sorted(EARLY_CLOSE_DATES),
         "sampling": ("slot drawn from the empirical E19B-R slot histogram, "
                      "excluding each source event's own slot +/- one bar"),
         "side": ("matched to the captured E19B-R event side (side-capture "
@@ -477,60 +485,8 @@ def assert_preregistered_head():
 
 
 def main():
-    assert_preregistered_head()
-    compile_id = open("compile_id.txt", encoding="utf-8").read().strip()
-    validate_compile_manifest(compile_id)
-    tags = {f"RTC2-FT32-{instrument}" for instrument in INSTRUMENTS}
-    existing = {row["name"] for row in backtest_list(PID)}
-    duplicates = sorted(tags & existing)
-    assert not duplicates, f"duplicate remote experiments: {duplicates}"
-    os.makedirs("random_time_ft_ledger", exist_ok=True)
-    results, all_rows = [], []
-    with open("random_time_ft_results.jsonl", "w", encoding="utf-8",
-              newline="\n") as out:
-        for instrument in INSTRUMENTS:
-            params = launch_parameters(instrument)
-            tag = f"RTC2-FT32-{instrument}"
-            fresh = {row["name"] for row in backtest_list(PID)}
-            assert tag not in fresh, f"duplicate appeared before create: {tag}"
-            created = backtest_create(PID, tag, params, compile_id=compile_id)
-            bid = created["backtest_id"]
-            print(instrument, "submitted", bid, flush=True)
-            bt = poll_backtest(PID, bid, max_wait=7200, poll_s=20)
-            runtime = (bt or {}).get("runtimeStatistics") or {}
-            status = str((bt or {}).get("status", ""))
-            assert status.lower().replace(".", "") == "completed"
-            error = str((bt or {}).get("error") or "")
-            assert error in ("", "None"), f"{instrument}: {error}"
-            rows = random_rows_from_chart(
-                instrument, bid, int(runtime["n_ft_rows"]))
-            validate_random_runtime(instrument, runtime, rows)
-            write_jsonl_atomic(os.path.join(
-                "random_time_ft_ledger", f"{instrument}_ft.jsonl"), rows)
-            record = {"inst": instrument, "bid": bid, "status": status,
-                      "error": error[:300], "n_ft_rows_retrieved": len(rows),
-                      "rt": {key: str(value) for key, value in runtime.items()}}
-            out.write(json.dumps(record, sort_keys=True) + "\n"); out.flush()
-            results.append(record); all_rows.extend(rows)
-            print(instrument, status, "| ft:", len(rows), flush=True)
-    assert_unique_chart_rows(all_rows)
-    sweep = json.load(open("e19br_ft_screen.json", encoding="utf-8"))
-    payload = build_comparison_payload(results, all_rows, sweep)
-    with open("random_time_ft_screen.json", "w", encoding="utf-8",
-              newline="\n") as handle:
-        json.dump(payload, handle, indent=2, sort_keys=True); handle.write("\n")
-    reloaded_rows, reloaded_results = [], []
-    for instrument in INSTRUMENTS:
-        with open(os.path.join("random_time_ft_ledger",
-                              f"{instrument}_ft.jsonl"), encoding="utf-8") as h:
-            reloaded_rows.extend(json.loads(line) for line in h if line.strip())
-    with open("random_time_ft_results.jsonl", encoding="utf-8") as handle:
-        reloaded_results = [json.loads(line) for line in handle if line.strip()]
-    assert payload == build_comparison_payload(
-        reloaded_results, reloaded_rows, sweep)
-    print("ALL RANDOM-TIME MARKETS DONE", len(all_rows),
-          payload["surface_comparison"]["classification"], flush=True)
-    return 0
+    raise RuntimeError(
+        "RTC2 is archived and stood down; cloud launch is permanently disabled")
 
 
 if __name__ == "__main__":
