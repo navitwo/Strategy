@@ -473,7 +473,56 @@ after matched side and empirical slots change the dispersion.
   `d47_databento_quote.py` is ready (env-var or ignored `*.env` file, key
   never printed); it needs a user-supplied `DATABENTO_API_KEY`. No download,
   no purchase.
-- Standing operational rule (user): NO `git stash` in this repository —
+- Standing operational rule (user): NO `git stash` in this repository --
   work-in-progress goes to a scratch branch commit instead.
+- No market data has been pulled and no cloud run, strategy backtest,
+  optimization, validation, or holdout access is authorized by this entry.
+
+## 2026-09-04 (second pass) — feasibility gate re-run on LEDGER-ANCHORED dispersion; Databento quote obtained
+
+- The same-morning gate PASSED on a BAD INPUT and the pass was retracted
+  before any data was pulled. `per_obs_sd_R = 0.45` was an assumption, not
+  an anchor. Recomputed from the committed 1,121-row E19B-R FT ledgers at
+  T2S0.5/pessimistic: per-arm SD = 1.0240R (decided n=1,080, mean +0.0324R),
+  contrast independence floor sqrt(2)x = **1.4481R**, anti-correlated
+  trimodal central (P(target-first)=0.2052) = **1.6015R** -- 3.2x the
+  assumption. At 0.45R a 0.2R half-width needs only n~19, so no grid point
+  could fail: the gate was unfailable, exactly the sixth instance of the
+  structurally-unreachable-outcome class -- first where the rule built to
+  catch the previous five was defeated by an unvalidated input.
+- Re-run with sd as a REQUIRED argument (no default; TypeError is the RED
+  guard) across floor 1.4481 / central 1.6015 / sensitivity 1.0 and 2.0,
+  200 reps, draws clipped to the CONTRAST bounds [-2.5R,+2.5R] (the
+  superseded run clipped contrast draws at the per-arm [-0.5,+2.0] bounds --
+  a second defect caught by review during this pass). A negative-control
+  test (sd=6.0R -> informative scenarios fail) proves the corrected gate
+  CAN fail.
+- **Frozen post-data gate: achieved n >= 800** (central; floor and
+  sensitivity-high agree at 800). NULL is the binding scenario (fires
+  0.155/0.035/0.625/0.000 at n=200 across the four anchors; passes only at
+  n>=800 for floor/central/sens-high, n>=400 for sens-low). Boundary
+  emissibility satisfied everywhere. Honest MDE record: the 0.3R probe
+  reaches 80% only under the declared 1.0R and the floor dispersion (1.000
+  and 0.855 at n=3200) and NEVER at central (0.740) or sens-high (0.250) --
+  the 0.2-0.55R band is declared NOT reliably detectable at achievable n
+  under the frozen central dispersion; a real effect must approach ~0.5R or
+  the study resolves via NULL from n~800. Achievable population
+  (~1,500-6,000) exceeds 800, so the study remains alive -- the corrected
+  gate did NOT stand it down, but it moved the required n from a trivial
+  200 to a real 800 and rewrote the MDE answer.
+- PROTOCOL.md: input-anchoring clause added (every feasibility input must
+  be anchored to committed data or declared with a sensitivity range;
+  proofs ship a fail-capable negative control).
+- Prereg: section 6c (ledger anchors), 6d (frozen re-run), 6a's original
+  result SUPERSEDED with its boundary-criterion restatement retained
+  (that correction was and remains correct); classify_primary
+  continuation-POSITIVE fix retained.
+- **Databento exact quote (free get_cost, zero bytes downloaded): ohlcv-1m
+  $68.9050 + definition $2.1328 = TOTAL $71.0378**, inside the $125 new-
+  account credits (57% of credits). Two fixes to d47 to get there: auth is
+  HTTP Basic with the key as username (not Bearer), host is
+  hist.databento.com, and the response is a plain USD float (not a JSON
+  object). Key read from git-ignored databento_credentials.env, never
+  printed; both response paths scrub it.
 - No market data has been pulled and no cloud run, strategy backtest,
   optimization, validation, or holdout access is authorized by this entry.

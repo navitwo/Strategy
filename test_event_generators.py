@@ -181,21 +181,48 @@ def test_real_export_packs_both_arms_and_context_without_new_series_names():
         "touch_minute_et": 600, "level_kind": "overnight_high"}
 
 
-def test_three_outcome_rule_and_feasibility_simulation():
-    from campaign2_analysis import (classify_primary, simulate_label_feasibility,
-                                    OPERABILITY_SCENARIOS)
+def test_three_outcome_rule_and_ledger_anchored_dispersion():
+    from campaign2_analysis import classify_primary, ledger_contrast_dispersion
     assert classify_primary(0.30, 0.25, 0.35) == "POSITIVE"
     assert classify_primary(-0.30, -0.35, -0.25) == "POSITIVE"  # continuation
     assert classify_primary(0.05, -0.05, 0.15) == "NULL"
     assert classify_primary(0.18, 0.05, 0.31) == "INCONCLUSIVE"
     assert classify_primary(0.21, 0.19, 0.23) == "INCONCLUSIVE"  # touches θ
-    report = simulate_label_feasibility(n=800, sessions=400, reps=50,
-                                        seed="C2-feasibility-v1")
-    assert report["sessions"] < report["n"]
-    assert set(report["scenarios"]) == set(OPERABILITY_SCENARIOS) | {
-        "near_threshold_positive"}
-    assert all(s["fire_rate"] >= 0 for s in report["scenarios"].values())
-    assert report["all_scenarios_pass"]
+    stats = ledger_contrast_dispersion()
+    # recomputed live from the committed 1,121-row E19B-R FT ledgers
+    assert stats["decided_n"] == 1080
+    assert round(stats["decided_mean_R"], 4) == 0.0324
+    assert round(stats["per_arm_sd_R"], 4) == 1.0240
+    assert round(stats["contrast_sd_independent_floor_R"], 4) == 1.4481
+    assert round(stats["contrast_sd_trimodal_central_R"], 4) == 1.6015
+    # the assumed 0.45R is >=3.2x below the anchored central value
+    assert stats["contrast_sd_trimodal_central_R"] / 0.45 > 3.2
+
+
+def test_feasibility_grid_requires_anchored_sd_and_can_fail():
+    from campaign2_analysis import simulate_label_feasibility
+    try:
+        simulate_label_feasibility(n=800, sessions=400)
+        raise AssertionError("sd_R defaulted — unanchored input allowed")
+    except TypeError:
+        pass
+    for bad in (0, -1, None):
+        accepted = False
+        try:
+            simulate_label_feasibility(bad, n=80, sessions=40, reps=2,
+                                       seed="neg")
+            accepted = True
+        except ValueError as exc:
+            assert "sd_R" in str(exc), exc
+        if accepted:
+            raise AssertionError(f"guard broken: sd_R={bad!r} accepted")
+    # negative control: an absurdly large dispersion makes NULL unreachable,
+    # proving the gate is not structurally pass-always (the 0.45R defect)
+    report = simulate_label_feasibility(6.0, n=200, sessions=100, reps=20,
+                                        boot=99, seed="neg-control")
+    assert report["scenarios"]["null_equivalent"]["fire_rate"] < 0.80
+    assert not report["informative_pass"]
+    print("PASS feasibility: sd_R required; grid can fail at large dispersion")
 
 
 def test_atr_floor_rejects_quiet_regime_and_entry_style_moves_only_px():

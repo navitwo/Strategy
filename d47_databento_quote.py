@@ -12,10 +12,15 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+import base64
+import json
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
+BASE = "https://hist.databento.com/v0"
 DATASET = "GLBX.MDP3"
 SYMBOLS = "NQ.FUT,GC.FUT"
-DATE_RANGE = "2010-06-07,2025-01-01"
+START = "2010-06-07"
+END = "2025-01-01"          # exclusive: dev interval through 2024-12-31
 SCHEMAS = ("ohlcv-1m", "definition")
 
 
@@ -42,12 +47,14 @@ def _key():
 
 
 def quote(schema, key):
+    # official auth: HTTP Basic with the API key as username, empty password
+    basic = base64.b64encode(f"{key}:".encode()).decode()
     body = urllib.parse.urlencode({
         "dataset": DATASET, "schema": schema, "symbols": SYMBOLS,
-        "stype_in": "parent", "date_range": DATE_RANGE}).encode()
+        "stype_in": "parent", "start": START, "end": END}).encode()
     request = urllib.request.Request(
-        "https://api.databento.com/v0/metadata.get_cost", data=body,
-        headers={"Authorization": f"Bearer {key}"})
+        f"{BASE}/metadata.get_cost", data=body,
+        headers={"Authorization": f"Basic {basic}"})
     try:
         with urllib.request.urlopen(request, timeout=60) as response:
             body = response.read().decode(errors="replace")
@@ -63,19 +70,17 @@ def quote(schema, key):
 
 def main():
     key = _key()
-    total_cents = 0
+    total_usd = 0.0
     for schema in SCHEMAS:
         status, payload = quote(schema, key)
-        print(schema, status, payload)
         if status != 200:
+            print(schema, status, payload)
             return 1
-        import json
-        cents = json.loads(payload)["usd_cost_electronic_cents"] \
-            if "usd_cost_electronic_cents" in payload else None
-        if cents is not None:
-            total_cents += cents
-    print(f"TOTAL electronic cents: {total_cents} "
-          f"(= ${total_cents/100:.2f}; new-account credits: $125)")
+        # metadata.get_cost returns a plain USD float (docs: -> float)
+        usd = float(payload.strip())
+        print(f"{schema}: {usd:.4f} USD")
+        total_usd += usd
+    print(f"TOTAL: ${total_usd:.4f} USD (new-account credits: $125.00)")
     return 0
 
 

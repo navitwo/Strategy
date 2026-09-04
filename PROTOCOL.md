@@ -59,3 +59,17 @@ label reachable only under a synthetic perturbation of an observed quantity
 must state that condition explicitly (e.g. DIFFERS_AND_TRADABLE requires a
 sweep surface whose pessimistic best clears the 0.2R friction threshold, which
 the observed 0.0648R pessimistic best does not).
+
+Input-anchoring clause (2026-09-04, sixth instance): **every input to a
+feasibility proof must be empirically anchored to committed data, or declared
+as an assumption with a reported sensitivity range.** A proof is only as good
+as its dispersion estimate. The sixth structurally-unreachable-outcome case
+was not a label a rule could never emit but a feasibility proof that could
+never fail: the C2 grid passed at minimum_passing_n=200 (the grid floor)
+because it assumed per-observation contrast sd = 0.45R, while the dispersion
+computable from the committed E19B-R FT ledgers at the primary cell is
+1.4481R (independence floor) to 1.6015R (anti-correlated trimodal central) —
+3.2x too small. At the anchored dispersion the same grid reports whether NULL
+is reachable at all; the rule for future proofs is that no hand-picked scale
+enters unflagged, and the proof must ship a negative control demonstrating it
+CAN fail at an adversarial input.

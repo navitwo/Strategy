@@ -85,40 +85,116 @@ achievable sizes `n ∈ {200, 400, 800, 1600, 3200}` (nobody knows the achievabl
 sample yet: two potential events per session over ~3,650 sessions × 2 markets is
 ~7,300 slots, so physical events plausibly land anywhere from ~1,500 to ~6,000).
 Each n uses `n/2` session-date clusters (two bounded observations per cluster),
-200 fixed-seed replicates, winsorized `[−0.5R,+2.0R]` payoffs, and a clustered
-bootstrap. The four operability scenarios gate the result (≥80% intended firing
-at that n):
+200 fixed-seed replicates, contrast draws winsorized to the implied bounds
+`[−2.5R,+2.5R]` (each arm `[−0.5R,+2.0R]`), and a clustered bootstrap. The
+simulated unit is the **paired contrast**, whose dispersion is anchored to
+committed data, never assumed (PROTOCOL input-anchoring clause, 2026-09-04;
+see §6c — the original `sd = 0.45R` was 3.2× below the ledger-derived value
+and made the gate unfailable). Three informative scenarios gate the result
+(≥80% intended firing at that n):
 
 1. reversal-positive (`Δ=+0.55R`),
 2. continuation-positive (`Δ=−0.55R`),
-3. null-equivalent (`Δ=0R`),
-4. boundary/inconclusive (`Δ=+0.2R`).
+3. null-equivalent (`Δ=0R`).
 
-A fifth near-threshold scenario (`Δ=+0.3R`) is an MDE probe reported at every
-grid point regardless of its answer (amendment 2026-09-04): whether the
-0.2–0.55R band is detectable at all is the declared minimum detectable effect
-record, never a stand-down trigger.
+Two further scenarios are reported at every grid point and never gate
+(amendments 2026-09-04): the knife-edge boundary case (`Δ=+0.2R`, which under
+the §6a restatement must be *emissible* — INCONCLUSIVE at ≥80% for some grid
+n — rather than reliable at every n), and the near-threshold MDE probe
+(`Δ=+0.3R`): whether the 0.2–0.55R band is detectable at all is the declared
+minimum detectable effect record, never a stand-down trigger.
 
-The gate output is the **minimum n at which the four operability scenarios
+The gate output is the **minimum n at which the three informative scenarios
 fire ≥80%**, frozen here as the pre-registered pass/fail number. If no grid
 point passes, the study stands down before any data or cloud cost. The
-simulated per-observation dispersion (`sd = 0.45R`) is also frozen in the gate
-artifact; the post-data replay re-runs the identical classifier at the achieved
-`n`, achieved session count, and the empirically measured clustered dispersion
-and is judged against this frozen number, not re-guessed.
+post-data replay re-runs the identical classifier at the achieved `n`, achieved
+session count, and the empirically measured clustered dispersion and is judged
+against this frozen number, not re-guessed.
+
+### 6c. Ledger-anchored dispersion (re-freeze 2026-09-04, pre-data)
+
+Derived from the committed 1,121-row E19B-R FT32 ledgers at the primary cell
+T2S0.5, pessimistic convention (decided arms n=1,080, mean +0.0324R, per-arm
+SD **1.0240R**):
+
+- **Floor 1.4481R** = √2 × per-arm SD — arms run opposite directions on the
+  same path, so `Var(A−B) = VarA + VarB − 2Cov` is at least this, larger as
+  the arms anti-correlate.
+- **Central 1.6015R** — trimodal contrast {+2.5R, −2.5R, 0} with per-tail
+  probability P(target-first) = 0.2052 recomputed from the ledgers (the
+  directive's 1.581R uses p≈0.2 and matches to rounding).
+- **Sensitivity bracket 1.0R–2.0R** — declared assumption range: 1.0R sits
+  below any same-path pairing (pure per-arm scale, no correlation penalty);
+  2.0R covers stronger anti-correlation and heavier C2-tail clustering.
+
+The frozen post-data gate uses the **central** minimum passing n, with the
+full sensitivity table published alongside it. If NULL (or any informative
+label) cannot fire ≥80% at any grid n under the central anchor, the study
+stands down before any data purchase.
 
 The test must assert `sessions < n`. This is classifier-operability evidence,
 not a power claim about realized market dispersion.
 
-### 6a. Gate executed — frozen result (2026-09-04, pre-data, zero market data)
+### 6d. Re-run at the anchored dispersion — frozen gate (2026-09-04, pre-data)
 
-Artifact: `c2_feasibility_grid.json` (seed `C2-feasibility-v1`, 200 reps).
+Artifact: `c2_feasibility_grid.json` (seed `C2-feasibility-v1`, 200 reps,
+four dispersion anchors per §6c; draws clipped to the contrast bounds —
+the superseded run had clipped contrast draws at the per-arm bounds, a
+second defect fixed in the same pass).
 
-- **minimum_passing_n = 200** — the frozen post-data pass/fail number.
-- POSITIVE and NULL — the two informative decision labels — fired **100%** at
-  every grid n including 3200.
-- MDE probe: Δ=+0.3R fires POSITIVE at 97%/100%/100%/100%/100%; the
-  0.2–0.55R band is declared detectable from n≥200 at the frozen dispersion.
+Exact rates from the artifact (of 200 reps):
+
+| sd (R) | min passing n | NULL @200 | NULL @400 | NULL @800 | 0.3R probe best |
+|---|---|---|---|---|---|
+| floor 1.4481 | **800** | 0.155 | 0.740 | 0.985 | 0.855 @3200 |
+| central 1.6015 | **800** | 0.035 | 0.535 | 0.945 | 0.740 @3200 |
+| sens-low 1.0 | 400 | 0.625 | 0.955 | 1.000 | 1.000 @3200 |
+| sens-high 2.0 | **800** | 0.000 | 0.365 | 0.880 | 0.250 @3200 |
+
+- **Frozen post-data pass/fail number: achieved n ≥ 800** (central case;
+  floor, central, and sensitivity-high all agree at 800; the bracket
+  endpoint 1.0R would relax to 400 but is declared, not central). The
+  achievable physical population (~1,500–6,000 events) comfortably exceeds
+  800, so the study remains alive — this is NOT a stand-down.
+- NULL is the binding scenario at every anchored dispersion (the superseded
+  0.45R run had it at 100% everywhere — proof the old gate could not fail).
+- **Honest MDE record:** the Δ=+0.3R probe reaches the 80% floor only at
+  the two lower dispersions (1.0R: 1.000 @3200; floor 1.4481R: 0.855
+  @3200) and NEVER at the central anchor or above (best 0.740 @3200;
+  sens-high 0.250). Under the frozen central dispersion the 0.2–0.55R band
+  is therefore declared **not reliably detectable at any achievable n**: a
+  real effect must approach ~0.5R for the classifier to call it reliably,
+  or the study must resolve via the NULL side (which fires from n≈800).
+  This is the answer the amendment asked for regardless of sign; it changes
+  no rule — the primary, θ, geometry, cell, and horizon are unchanged.
+- Boundary emissibility (per the §6a restatement): INCONCLUSIVE fires ≥80%
+  at some grid n under every anchored dispersion (per-dispersion maxima
+  0.97/0.985/0.96/0.99). The knife-edge rate declines with n as estimator
+  consistency demands — lowest cell in the whole grid is 0.725
+  (sens-high @3200) — exactly the behavior §6a predicted.
+- A negative-control test ships with the grid: at adversarial sd=6.0R the
+  informative scenarios fail, proving the corrected gate can actually fail.
+
+### 6a. Gate executed — boundary-criterion restatement (retained), result SUPERSEDED
+
+> **SUPERSEDED 2026-09-04 (same day):** the run recorded below used an
+> ASSUMED per-contrast dispersion of `sd = 0.45R`, which the committed
+> E19B-R FT ledgers show is 3.2× too small (§6c). At the anchored
+> dispersion the informative NULL label fires 4% at n=200, so the claims
+> "minimum_passing_n = 200" and "0.3R detectable from n≥200" are WITHDRAWN
+> and replaced by §6c. Retained verbatim because the §6a boundary-criterion
+> restatement below it remains correct and in force: it was a genuine
+> estimator-consistency defect, independent of the dispersion input. The
+> original artifact has been overwritten by the anchored re-run under the
+> same filename.
+
+Original run (artifact of record now replaced; seed `C2-feasibility-v1`,
+200 reps, assumed sd 0.45R):
+
+- **minimum_passing_n = 200** — WITHDRAWN: at 0.45R an n of 19 already
+  clears a 0.2R half-width, so no grid point could fail.
+- POSITIVE and NULL fired 100% at every grid n — artifact of the same defect.
+- MDE probe claim "detectable from n≥200" — WITHDRAWN; see §6c.
 - Boundary scenario (Δ exactly = θ) degraded with n: 93.5 / 92.0 / 86.0 /
   86.5 / **67.5%** at n=200…3200, failing the 80% floor at n=3200 only.
 
