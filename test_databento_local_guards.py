@@ -411,8 +411,9 @@ class QcReconciliation(unittest.TestCase):
             f"(< {self.MIN_FULL_EXACT_FRACTION:.0%} measured floor)")
         print(f"QC-reconciliation guard(c): {totals['bars']} common bars "
               f"across {checked_days} days, {totals['exact']} fully exact "
-              f"({fraction:.1%}), all fields within "
-              f"{self.MAX_FIELD_DEV_TICKS} ticks, zero orphan bars")
+              f"({fraction:.1%}), H/L within "
+              f"{self.MAX_HL_DEV_TICKS} tick, O/C within "
+              f"{self.MAX_OC_DEV_TICKS} ticks, zero orphan bars")
 
 
 if __name__ == "__main__":

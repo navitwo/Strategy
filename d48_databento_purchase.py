@@ -12,8 +12,9 @@ that isn't failed is ADOPTED (poll + download), never resubmitted — a
 crash between submit and download cannot cause a double charge.
 
 Downloads (into git-ignored data/databento/):
-  ohlcv-1m   dbn/zstd   NQ.n.0 + GC.n.0, 2010-06-07 -> 2026-09-04 (excl)
-  definition dbn/zstd   same range (contract metadata incl. expiry dates)
+  ohlcv-1m    NQ.n.0 + GC.n.0, 2010-06-07 -> 2026-09-04 (excl). Both
+  definition schemas arrive as ZIP containers of per-UTC-day .dbn.zst
+  members (observed 2026-09-04 regardless of the compression flag).
 
 The API key is never echoed; every response body is scrubbed.
 """

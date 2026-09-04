@@ -553,10 +553,13 @@ after matched side and empirical slots change the dispersion.
   compression — nothing submitted, nothing charged); second died on a TLS
   reset between submit and download; d48 was made RESUMABLE (adopts the
   exact-match existing job, never resubmits) before the successful run.
-  ohlcv-1m billed $38.031821 (== quote). Delivered as ZIP containers of
-  per-UTC-day .dbn.zst members regardless of the zstd flag — pipeline
-  handles both shapes. ~156 MB ohlcv; 5,047 day-members 2010-06-07→
-  2026-09-03; data/ git-ignored, only manifest + budget doc are committed.
+  Billed: ohlcv-1m $38.031821 + definition $0.008394 (job fields; sum =
+  quote exactly). Delivered as ZIP containers of per-UTC-day .dbn.zst
+  members regardless of the zstd flag — pipeline handles both shapes.
+  ~156 MB ohlcv + ~6.3 MB definition; 5,047 ohlcv day-members
+  2010-06-07→2026-09-03. Containers + manifest live under git-ignored
+  data/databento/; their sha256s are recorded in DATABENTO_BUDGET.md so
+  the ignored dir remains verifiable from tracked files.
 - Local NQ/GC minute→30m pipeline `databento_local_data.py` with the three
   mandatory guards, each a permanent test (test_databento_local_guards.py):
   (a) DateGate — default loads decode ONLY UTC members ≤ DEV_END(2024-12-

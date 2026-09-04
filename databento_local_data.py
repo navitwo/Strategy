@@ -114,18 +114,26 @@ def iter_dbn_frames(path, schema, day_filter=None):
 
 
 def load_instrument_map(path=DEFINITION_FILE):
-    """{(instrument_id): [(d0, d1, future_symbol)]} from the purchased
-    definition schema, cached to a sidecar JSON.
+    """{(instrument_id): [(activation_iso, expiration_iso, raw_symbol)]}
+    from the purchased definition schema, cached to a sidecar JSON.
 
-    instrument_ids are REUSED across instruments over the years, so
-    lookups MUST be date-aware: resolve_raw_symbol(iid, day) below.
-    A definition record's first_date/last_date is its trading interval.
+    GLBX.MDP3 bulk definition members list EVERY instrument active that
+    day with raw_symbol + activation + expiration (there is no
+    future_symbol/first_date/last_date field in this schema — assumed
+    once, caught by the live decode). instrument_ids are REUSED across
+    instruments over the years (observed: 118470 = GCZ3 in 2013,
+    unrelated later), so lookups MUST be date-aware via
+    resolve_raw_symbol(iid, day). Members are sampled every ~3rd day:
+    instruments live months, so coverage is complete for anything the
+    continuous series ever maps; misses fail LOUDLY (KeyError), never
+    silently.
     """
     cache = os.path.join(DATA_DIR, "instrument_map.json")
     if os.path.exists(cache):
         with open(cache, encoding="utf-8") as fh:
             raw = json.load(fh)
-        return {int(k): [(a, b, s) for a, b, s in v] for k, v in raw.items()}
+        return {int(k): [tuple(v) for v in lst]
+                for k, lst in raw.items()}
     if not os.path.exists(path):
         raise FileNotFoundError(path)
     import databento
@@ -133,31 +141,31 @@ def load_instrument_map(path=DEFINITION_FILE):
     if _is_zip(path):
         with zipfile.ZipFile(path) as zf:
             members = sorted(n for n in zf.namelist()
-                             if n.endswith(".dbn") or n.endswith(".dbn.zst"))
-            # every definition record carries its OWN first/last_date, and
-            # front-relevant contracts trade for months; sampling weekly
-            # members observes them all without ~5,000-file decode cost.
-            # (Short-lived non-front instruments may be missed by design —
-            # resolve_raw_symbol then fails LOUDLY at the call site.)
-            sampled = members[::21] or members
-            for name in sampled:
+                             if n.endswith(".dbn.zst"))
+            for name in members[::3] or members:
                 with zf.open(name) as fh:
                     raw = fh.read()
                 df = databento.DBNStore.from_bytes(raw).to_df(
                     schema="definition")
-                cols = ("instrument_id", "future_symbol", "first_date",
-                        "last_date")
-                for iid, fut, d0, d1 in zip(*(df[c].values for c in cols)):
-                    rec = (str(d0)[:10], str(d1)[:10], str(fut))
-                    by_iid.setdefault(int(iid), set()).add(rec)
+                if "raw_symbol" not in df.columns:
+                    continue
+                for iid, s, act, exp in zip(
+                        df["instrument_id"].values,
+                        df["raw_symbol"].values,
+                        df["activation"].values,
+                        df["expiration"].values):
+                    try:
+                        a = str(act)[:10]
+                        e = str(exp)[:10]
+                    except (TypeError, ValueError):
+                        continue
+                    if a.startswith("Na") or e.startswith("Na"):
+                        continue
+                    by_iid.setdefault(int(iid), set()).add(
+                        (a, e, str(s)))
     else:
-        df = databento.read_dbn(path).to_df(schema="definition")
-        for iid, fut, d0, d1 in zip(df["instrument_id"].values,
-                                    df["future_symbol"].values,
-                                    df["first_date"].values,
-                                    df["last_date"].values):
-            by_iid.setdefault(int(iid), set()).add(
-                (str(d0)[:10], str(d1)[:10], str(fut)))
+        raise NotImplementedError(
+            "single-file definition container not supported")
     out = {iid: sorted(v) for iid, v in by_iid.items()}
     os.makedirs(DATA_DIR, exist_ok=True)
     with open(cache, "w", encoding="utf-8") as fh:
@@ -166,13 +174,20 @@ def load_instrument_map(path=DEFINITION_FILE):
 
 
 def resolve_raw_symbol(instrument_map, instrument_id, on_date):
-    """Raw future symbol (e.g. 'GCZ13') for one instrument_id at a date."""
-    for d0, d1, sym in instrument_map.get(instrument_id, []):
-        if d0 <= on_date.isoformat() <= d1:
-            return sym
+    """Raw future symbol (e.g. 'GCZ13') for one instrument_id at a date,
+    from its [activation, expiration] trading interval."""
+    iso = on_date.isoformat()
+    matches = [sym for a, e, sym in instrument_map.get(instrument_id, [])
+               if a <= iso <= e]
+    uniq = set(matches)
+    if len(uniq) == 1:
+        return matches[0]
+    if len(uniq) > 1:
+        raise KeyError(
+            f"instrument {instrument_id} ambiguous at {iso}: {sorted(uniq)}")
     raise KeyError(
         f"instrument {instrument_id} has no definition interval covering "
-        f"{on_date.isoformat()}")
+        f"{iso}")
 
 
 def dbn_minute_rows(path, market, day_filter, instrument_map=None,

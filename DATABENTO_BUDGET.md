@@ -45,11 +45,23 @@ $125.00 − $124.68 = **$0.32** gap. No unexplained spend remains.
 | date | request | get_cost quote | actual charge | inferred remaining |
 |---|---|---|---|---|
 | 2026-08-09 | XNAS sample jobs ×3 (trades/ohlcv-1m/mbo MSFT) | — | $0.32 | $124.68 (portal-verified 2026-09-04) |
-| 2026-09-04 | C2 purchase: GLBX.MDP3 ohlcv-1m + definition, NQ.n.0+GC.n.0 continuous, 2010-06-07→2026-09-04 (d48, ceiling $45) | **$38.04** (re-quoted immediately pre-submit) | ohlcv-1m billed **$38.031821** (job field, = quote); definition job awaiting billing confirmation (~$0.0084 expected) | **≈ $86.64** |
+| 2026-09-04 | C2 purchase: GLBX.MDP3 ohlcv-1m + definition, NQ.n.0+GC.n.0 continuous, 2010-06-07→2026-09-04 (d48, ceiling $45) | **$38.04** (re-quoted immediately pre-submit) | ohlcv-1m **$38.031821** + definition **$0.008394** (job fields; sum $38.0402 = quote exactly) | **≈ $86.64** |
 
 *Quotes vs actuals: Databento bills the confirmed job cost, which for
 batch bulk jobs matches the pre-quote at the same range. If post-purchase
 portal reconciliation shows |actual − $38.04| > $1, rule 2 above applies.*
+
+### Purchased container provenance (tracked; the files themselves live under git-ignored data/databento/)
+
+| file | bytes | sha256 |
+|---|---|---|
+| glbx-mdp3-ohlcv-1m.zip | 156,181,748 | c73fa087a7145d1ccce136042ad03c9cd495692a06a77b9e474dcd5f51d1287f |
+| glbx-mdp3-definition.zip | 6,313,758 | 29dfb228a939d60156502f1f0e901891cc1d4df199a7aa38c0beb04334620b08 |
+
+Jobs: ohlcv-1m GLBX-20260904-77GSFBPBNT ($38.031821); definition
+GLBX-20260904-YTWSXK7WDK ($0.008394). Both containers are ZIPs of
+per-UTC-day .dbn.zst members. Verify after any restore:
+`certutil -hashfile data\\databento\\<file> SHA256`.
 
 ## Known quotes (context, not commitments)
 
