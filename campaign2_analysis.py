@@ -92,6 +92,71 @@ def classify_primary(point, ci_low, ci_high, theta=THETA_R):
     return "INCONCLUSIVE"
 
 
+# Pre-data amendment (2026-09-04, prereg section 5): the primary splits into
+# two verdicts computed SEPARATELY and never pooled -- a gold result cannot
+# be diluted by an index null, and vice versa.
+PRIMARY_VERDICTS = {
+    "primary_a_index": ("NQ",),
+    "primary_b_gold": ("GC",),
+}
+# Descriptive-only pooled replication (never a verdict).
+POOLED_DESCRIPTIVE = ("NQ", "GC")
+
+
+def screen_vs_zero(ci_low, ci_high, theta=THETA_R):
+    """Screening statistic vs zero, reported alongside each primary verdict.
+
+    Prereg section 5 (2026-09-04): descriptive only. A POSITIVE confirmatory
+    verdict REQUIRES classify_primary on the same interval; this function can
+    never promote anything -- its 'significant_not_tradable' label exists
+    precisely to keep a real-but-below-theta effect from collapsing into an
+    uninformative NULL while still marking it NOT tradable at theta.
+    """
+    excludes_zero = ci_low > 0.0 or ci_high < 0.0
+    inside_theta = -theta <= ci_low and ci_high <= theta
+    if not excludes_zero:
+        return {"screening": "not_significant_vs_zero",
+                "confirmatory_required": classify_primary(
+                    (ci_low + ci_high) / 2.0, ci_low, ci_high, theta)}
+    if inside_theta:
+        return {"screening": "significant_not_tradable",
+                "confirmatory_required": classify_primary(
+                    (ci_low + ci_high) / 2.0, ci_low, ci_high, theta)}
+    return {"screening": "significant_beyond_theta",
+            "confirmatory_required": classify_primary(
+                (ci_low + ci_high) / 2.0, ci_low, ci_high, theta)}
+
+
+def verdict_pack(results_by_market, theta=THETA_R):
+    """A/B verdict pack from per-market point/CI estimates.
+
+    results_by_market: {market: {"point": float, "ci": (low, high)}} for the
+    markets a verdict covers. NEVER pools: each verdict is evaluated on its
+    own market's interval. The pooled equal-weight estimate, if supplied as
+    a synthetic 'POOLED' key, is labeled descriptive and cannot carry a
+    verdict.
+    """
+    pack = {}
+    for verdict, markets in PRIMARY_VERDICTS.items():
+        missing = [m for m in markets if m not in results_by_market]
+        if missing:
+            pack[verdict] = {"error": f"missing markets {missing}",
+                             "operable": False}
+            continue
+        market = markets[0]  # both verdicts are single-market by design
+        est = results_by_market[market]
+        lo, hi = est["ci"]
+        pack[verdict] = {
+            "market": market, "n": est.get("n"), "sessions": est.get("sessions"),
+            "point_R": est["point"], "ci_low_R": lo, "ci_high_R": hi,
+            "theta_R": theta,
+            "confirmatory": classify_primary(est["point"], lo, hi, theta),
+            **screen_vs_zero(lo, hi, theta),
+            "operable": est.get("n", 0) >= 800,
+        }
+    return pack
+
+
 def _seed(text):
     return int(hashlib.sha256(str(text).encode()).hexdigest()[:16], 16)
 

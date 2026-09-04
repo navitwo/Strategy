@@ -251,6 +251,49 @@ def test_atr_floor_rejects_quiet_regime_and_entry_style_moves_only_px():
     assert base["level"]["risk"] == base["touch_close"]["risk"]
 
 
+def test_ab_verdicts_never_pool_and_screen_never_promotes():
+    """Pre-data amendments (2026-09-04): two verdicts, never pooled; a
+    screening statistic that reports but cannot promote."""
+    from campaign2_analysis import (PRIMARY_VERDICTS, screen_vs_zero,
+                                    verdict_pack, classify_primary)
+    # structure: exactly the two registered verdicts, each single-market
+    assert set(PRIMARY_VERDICTS) == {"primary_a_index", "primary_b_gold"}
+    assert PRIMARY_VERDICTS["primary_a_index"] == ("NQ",)
+    assert PRIMARY_VERDICTS["primary_b_gold"] == ("GC",)
+    # the dilution scenario the split exists to prevent: strong GC + null NQ
+    results = {
+        "GC": {"point": 0.60, "ci": (0.40, 0.90), "n": 1200, "sessions": 700},
+        "NQ": {"point": 0.02, "ci": (-0.05, 0.09), "n": 1500, "sessions": 800},
+    }
+    pack = verdict_pack(results)
+    assert pack["primary_b_gold"]["confirmatory"] == "POSITIVE"
+    assert pack["primary_b_gold"]["market"] == "GC"
+    assert pack["primary_a_index"]["confirmatory"] == "NULL"
+    # a pooled average of the two (~0.31, CI roughly ±0.25) would be
+    # INCONCLUSIVE — the split is what keeps the gold verdict clean
+    pooled_point = (0.60 + 0.02) / 2
+    assert classify_primary(pooled_point, 0.10, 0.62) != "POSITIVE"
+    # screening cannot promote: real-but-below-theta is labeled honestly
+    scr = screen_vs_zero(0.05, 0.15)
+    assert scr["screening"] == "significant_not_tradable"
+    assert scr["confirmatory_required"] == "NULL"
+    assert screen_vs_zero(-0.10, 0.20)["screening"] == \
+        "not_significant_vs_zero"
+    assert screen_vs_zero(0.25, 0.55)["screening"] == \
+        "significant_beyond_theta"
+    # per-verdict operability uses each market's OWN n against the frozen
+    # central gate, never the pooled total
+    thin = {"NQ": {"point": 0.6, "ci": (0.4, 0.9), "n": 799},
+            "GC": {"point": 0.6, "ci": (0.4, 0.9), "n": 800}}
+    tp = verdict_pack(thin)
+    assert tp["primary_a_index"]["operable"] is False
+    assert tp["primary_b_gold"]["operable"] is True
+    # a verdict missing its market cannot silently fall back to the pool
+    broken = verdict_pack({"GC": results["GC"]})
+    assert broken["primary_a_index"].get("error")
+    assert broken["primary_a_index"]["operable"] is False
+
+
 def run_all():
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

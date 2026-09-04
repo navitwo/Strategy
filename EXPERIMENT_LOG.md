@@ -526,3 +526,85 @@ after matched side and empirical slots change the dispersion.
   printed; both response paths scrub it.
 - No market data has been pulled and no cloud run, strategy backtest,
   optimization, validation, or holdout access is authorized by this entry.
+
+## 2026-09-04 — Campaign 2: continuous re-quote, budget discipline, ONE purchase, local pipeline + 3 guards
+
+- Continuous-symbology re-quote (user-directed pre-purchase): stype_in=
+  continuous, NQ.n.0 + GC.n.0 (first-party OI front mapping = Campaign 1's
+  DataMappingMode.OPEN_INTEREST analogue; unadjusted prices = RAW analogue),
+  2010-06-07 → 2026-09-04 exclusive (end rolled to today so validation/
+  holdout are bought once, gated in code, not by absence of files).
+  Quote: ohlcv-1m $38.0318 + definition $0.0084 = **$38.04** — 53% cheaper
+  than the $71.04 parent-symbology pull AND 20 months more data. The parent
+  figure over-pulled every listed month; superseded.
+- Real-balance verification: Databento exposes NO balance/credits endpoint
+  (probed billing.balance/billing/billing.charges/users.get on hist+api
+  hosts — all 404; official client 0.86.0 has only batch/metadata/
+  symbology/timeseries; portal page login-walled). Portal-verified balance
+  from user: **$124.68**. The $0.32 gap vs the $125 grant is fully
+  reconciled by the three 2026-08-09 XNAS sample jobs visible in
+  batch.list_jobs (account creation ≈ 2026-08-09 ⇒ credits expire
+  **2027-02-09**). Standing record: DATABENTO_BUDGET.md with two rules —
+  re-verify portal-side above $10, stop-and-reconcile on >$1 drift.
+- Purchase executed with a **code-enforced $45 ceiling**: d48 re-runs
+  get_cost immediately before submission and aborts above it; CONFIRM=1
+  token + no-overwrite guard make accidental double-spend structurally
+  impossible. First launch died at client validation (`zip` not a valid
+  compression — nothing submitted, nothing charged); second died on a TLS
+  reset between submit and download; d48 was made RESUMABLE (adopts the
+  exact-match existing job, never resubmits) before the successful run.
+  ohlcv-1m billed $38.031821 (== quote). Delivered as ZIP containers of
+  per-UTC-day .dbn.zst members regardless of the zstd flag — pipeline
+  handles both shapes. ~156 MB ohlcv; 5,047 day-members 2010-06-07→
+  2026-09-03; data/ git-ignored, only manifest + budget doc are committed.
+- Local NQ/GC minute→30m pipeline `databento_local_data.py` with the three
+  mandatory guards, each a permanent test (test_databento_local_guards.py):
+  (a) DateGate — default loads decode ONLY UTC members ≤ DEV_END(2024-12-
+  31), post-gate days never enter memory; explicit post-gate requests raise
+  unless the committed VALIDATION_UNLOCK=False is passed True. Verified
+  member/trade-date arithmetic empirically on real data before trusting
+  the truncation. (b) Embedded-roll detection via instrument_id change;
+  a mid-slot roll produces NO bar (fail-closed gap); Campaign 1's rule
+  applied exactly through the frozen on_rollover (ATR reset + partial-
+  overnight invalidation). Permanent discontinuity proof: 1,000-point
+  old-contract price level cannot leak into the post-roll overnight
+  high/low. Real-data check: NQ roll 2020-03-18 20:00 ET and GC roll
+  2020-03-22 18:00 ET detected — dates match the known OI-roll window
+  around the March 2020 expiries. Stream view and definition/session
+  view cross-validate in a permanent test. (c) QC reconciliation —
+  join convention established empirically: bars keyed on TRADE DATE +
+  ET end time, QC files {D-1,D,D+1} merged (a file can omit its first
+  evening minutes — they surface in the next day's file). On four
+  consecutive weekdays (2013-10-08..11, front GCZ13) the two paths
+  produce IDENTICAL 30m bar sets: 47/47 per day, ZERO orphans,
+  188 common bars. Measured equivalence contract, enforced in the
+  permanent test: high/low within 1 tick on every bar (363/376 exact —
+  the fields that build overnight levels and touch triggers); open/-
+  close within 4 ticks (worst: one Friday 16:30 bar-open, DBN first
+  trade 1270.0 vs AlgoSeek 1270.4); full OHLC exact 65.4% of bars.
+  Residual drift root cause: Databento GLBX.MDP3 consolidates CME
+  Globex + ClearPort, Lean's bundle is AlgoSeek (volume ratio ~1.7:1)
+  — bit-exactness is impossible across vendors, the tick ceilings are
+  the meaningful equivalence, and `open` is never consumed by the
+  frozen generator. Sunday 10-07 excluded as a bundle boundary (its
+  file starts 21:22 ET, missing the 18:00 Globex reopen minutes).
+  Definition file decodes to a date-aware instrument map (ids are
+  REUSED across instruments over years — observed: 118470=GCZ3 then
+  unrelated products; lookup is (iid, trade-date)).
+- Pre-data design amendments folded in: §5 becomes TWO never-pooled
+  verdicts — Primary A (NQ index complex) and Primary B (GC alone), each
+  carrying the identical frozen estimator — plus a screening statistic vs
+  zero that reports (and labels real-but-below-θ effects
+  significant_not_tradable) but can never promote anything; §6d gains the
+  per-verdict gate note (each verdict needs its OWN n ≥ 800); §7 rescue
+  rule re-anchored to A/B, never the pooled descriptive replication.
+  Permanent test: a strong-GC + null-NQ pack keeps both verdicts clean
+  where the pooled average would be INCONCLUSIVE.
+- Everything else in C2-ONLT-v1 stays frozen and green: sole cell T2S0.5
+  @120m paired contrast, pessimistic stop-first, winsorized bounded
+  payoff, θ=0.2R, three-outcome geometry, clustered bootstrap with
+  sessions < n, 10-tick ATR floor + c2_atr_floor_rejects, c2_entry_style,
+  anchored-dispersion grid (floor 1.4481/central 1.6015, frozen n≥800),
+  byte-exact generator_v1 gate. Full suites re-run after every edit.
+- No strategy backtest, no optimization, no validation/holdout read — the
+  purchase holds that data under the same committed-flag discipline.

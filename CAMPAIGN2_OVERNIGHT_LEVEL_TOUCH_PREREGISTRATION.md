@@ -40,6 +40,57 @@ A complete overnight is exactly 31 contiguous completed 30-minute endpoints from
 
 The frozen `generator_v1` compatibility gate must reconcile the committed E19B-R ledgers exactly: NQ 388, ES 186, YM 376, RTY 171; same `chart_x`, 16 codes, and `packed_uint32` for all 1,121 rows. Failure blocks Campaign 2.
 
+### 3a. Local data pipeline and its three mandatory guards (pre-data, 2026-09-04)
+
+Purchased Databento continuous data (`NQ.n.0`/`GC.n.0`, GLBX.MDP3, unadjusted
+= RAW equivalent; open-interest front mapping = Campaign 1's
+`DataMappingMode.OPEN_INTEREST` analogue) feeds the frozen generator through
+`databento_local_data.py` under three permanent guards, each with committed
+tests (`test_databento_local_guards.py`):
+
+- **(a) Date gate.** Validation/holdout days are physically on disk after
+  this purchase and must stay unread. Two mechanisms, both required:
+  default loads decode only UTC members ≤ DEV_END (2024-12-31), so
+  post-gate session dates never enter memory; and any explicit day request
+  past DEV_END raises unless `VALIDATION_UNLOCK` — a committed constant,
+  False until the preregistered validation phase — is passed as True.
+- **(b) Embedded-roll handling.** Under continuous symbology the roll is
+  embedded (the underlying `instrument_id` changes while the requested
+  symbol does not). Rolls are detected from the symbol mapping in the DBN
+  stream plus definition data, and Campaign 1's rule is carried forward
+  exactly: a mapping event resets ATR and invalidates any partial
+  overnight. A slot whose minutes span two contracts is never aggregated
+  into one bar (fail-closed gap; the generator's contiguity check then
+  invalidates the overnight). Permanent proof: a roll-day price
+  discontinuity cannot corrupt an overnight high/low.
+- **(c) Two-path reconciliation.** Local 30-minute bars must reconcile with
+  QuantConnect Lean minutes on a sample of dates before any result is
+  computed from the local path. Join convention established empirically:
+  bars keyed on TRADE DATE + ET wall-clock end time, QC files
+  {D-1, D, D+1} merged (a file can omit its first evening minutes). On
+  four consecutive weekdays (2013-10-08..11, front GCZ13) the paths
+  produce IDENTICAL 30m bar sets — 47/47 per day, zero orphans, 188
+  common bars — under which the MEASURED equivalence contract is enforced
+  by the permanent test: high/low within one tick on every bar (363/376
+  field comparisons exact; these build overnight levels and touch
+  triggers), open/close within four ticks (worst measured case one
+  bar-open on a Friday late session; `open` is never consumed by the
+  frozen generator), full OHLC exact on ≥60% of bars (measured 65.4%).
+  Residual drift root cause: Databento GLBX.MDP3 consolidates CME Globex
+  + ClearPort while Lean's bundle is the AlgoSeek feed (volume ratio
+  ~1.7:1) — bit-exactness is impossible across vendors, so tick ceilings
+  are the meaningful equivalence. Zero-volume DBN minutes are dropped
+  (Lean emits no bar for a no-trade minute); QC rows are restricted to
+  the exact DBN-mapped expiry, resolved date-aware from the purchased
+  definition file because instrument ids are reused across instruments.
+  The hosted path remains the compute authority and the byte-exact
+  generator_v1 gate the methodology anchor; this test BOUNDS the local
+  path's equivalence instead of silently assuming it, and any violation
+  beyond the measured contract fails with printed evidence.
+
+The pipeline is transport, not methodology: no cell, threshold, horizon,
+payoff, or classifier behavior differs between local and hosted paths.
+
 ## 4. Outcomes and transport
 
 Reuse the no-order downstream event-study layer:
@@ -59,24 +110,27 @@ New packed context per physical event:
 
 Context is conditioning-only. No context threshold is selectable in this phase.
 
-## 5. Sole primary
+## 5. Primary verdicts (split pre-data, 2026-09-04)
 
-- Physical population: NQ and GC pooled with equal market weighting; each market first averages its event-level values, then the two market means are averaged. Market-specific results are mandatory descriptive replications.
-- Contrast: paired `reversal payoff − continuation payoff`.
-- Cell: **T2S0.5**.
-- Horizon: **120 minutes**.
-- Ambiguity convention: pessimistic stop-first.
-- Per-arm payoff: horizon payoff winsorized to the cell's bounded range `[-0.5R, +2.0R]`; paired contrast is therefore bounded `[-2.5R, +2.5R]`.
-- Inference: session-date clustered bootstrap, fixed seed, two-sided 95% interval.
-- Economic threshold: **θ = 0.2R**, never widened.
+- **Primary A — index complex:** NQ events only. **Primary B — GC alone:** GC events only. The two verdicts are computed and reported **separately and are never pooled**: a gold result cannot be diluted by an index null, and vice versa. (This supersedes the pre-split "sole primary pooled NQ+GC with equal market weighting" wording, which was itself a pre-data amendment from the original single-cell plan; the pooled NQ+GC equal-weight contrast is retained below only as a descriptive replication, never a verdict.)
+- Both primaries share every other frozen element identically:
+  - Contrast: paired `reversal payoff − continuation payoff`.
+  - Cell: **T2S0.5**.
+  - Horizon: **120 minutes**.
+  - Ambiguity convention: pessimistic stop-first.
+  - Per-arm payoff: horizon payoff winsorized to the cell's bounded range `[-0.5R, +2.0R]`; paired contrast is therefore bounded `[-2.5R, +2.5R]`.
+  - Inference: session-date clustered bootstrap, fixed seed, two-sided 95% interval.
+  - Economic threshold: **θ = 0.2R**, never widened.
+- Descriptive replication: the pooled NQ+GC equal-market-weight contrast (each market averages its event-level values first, then the two market means are averaged) is reported alongside, labeled descriptive.
+- **Screening statistic (pre-data amendment, 2026-09-04):** alongside each primary's confirmatory θ test, report significance **versus zero** (same clustered bootstrap, two-sided 95% interval tested against 0, plus its p-style reading from interval position). It is reported but has **no promotion power**: no effect may be elevated to POSITIVE, tradability, or any next-phase claim on the screening statistic alone. Its purpose is descriptive honesty — a real-but-below-tradability effect is reportable as "significant vs zero, inside θ ⇒ NOT tradable at threshold" instead of collapsing into an uninformative NULL.
 
-Three outcomes:
+Three outcomes per primary:
 
 - **POSITIVE:** the complete CI is above `+0.2R` (reversal) or below `−0.2R` (continuation); direction is reported.
 - **NULL:** the complete CI lies inside `[-0.2R, +0.2R]`.
 - **INCONCLUSIVE:** every other interval geometry.
 
-All other cells, horizons, market splits, levels, range/ATR bins, touch-time bins, optimistic ambiguity results, raw ratios, MFE/MAE, and control contrasts are exploratory and cannot promote a strategy.
+All other cells, horizons, levels, range/ATR bins, touch-time bins, optimistic ambiguity results, raw ratios, MFE/MAE, and control contrasts are exploratory and cannot promote a strategy. (The NQ/GC market split is no longer on this list: it *is* the A/B verdict structure; any other market partition remains exploratory.)
 
 ## 6. Mandatory pre-launch feasibility gate
 
@@ -156,6 +210,11 @@ Exact rates from the artifact (of 200 reps):
   endpoint 1.0R would relax to 400 but is declared, not central). The
   achievable physical population (~1,500–6,000 events) comfortably exceeds
   800, so the study remains alive — this is NOT a stand-down.
+- *Post-split application (2026-09-04 note, no number changed): the gate
+  applies per verdict — Primary A and Primary B each need their OWN achieved
+  event count ≥ 800 to be operable; it is never evaluated on the pooled
+  count, since the verdicts are never pooled. The pooled-population estimate
+  above is retained as the pre-split derivation record.*
 - NULL is the binding scenario at every anchored dispersion (the superseded
   0.45R run had it at 100% everywhere — proof the old gate could not fail).
 - **Honest MDE record:** the Δ=+0.3R probe reaches the 80% floor only at
@@ -228,12 +287,13 @@ estimator, and clustering rule are unchanged.
   second, fully declared variant resolves the same events entering at the
   **touch bar close**. The variant is reported alongside the primary as the
   passive-limit-versus-marketable question from Campaign 1. It cannot be used
-  to pick the better-looking answer: the sole primary remains level-entry.
+  to pick the better-looking answer: the primary entry style — for both
+  verdicts A and B — remains level-entry.
 
 ## 7. Stop rules
 
 - No strategy orders, strategy backtest, optimization, validation, or holdout access.
 - No parameter selection from the 16-cell surface or context bins.
 - No random-time control until the event ledger passes exact reconciliation.
-- No rescue/strategy phase unless the sole primary is robust, economically meaningful, ambiguity-stable, and directionally supported across both markets.
+- No rescue/strategy phase unless at least one primary verdict (A or B) is robust, economically meaningful, and ambiguity-stable within its own market; a rescue phase may never be argued from the pooled descriptive replication.
 - A NQ null is expected and does not invalidate a separately reported GC result; neither leg may be silently dropped.
