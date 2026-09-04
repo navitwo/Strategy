@@ -834,8 +834,17 @@ def test_default_predicate_preserves_legacy_experiment_identity():
     legacy = dict(CONFIG_DEFAULTS)
     legacy.pop("event_predicates")
     legacy.pop("random_control_seed")
+    legacy.pop("c2_entry_style")   # C2 axis joins identity only for C2 runs
     configured = dict(CONFIG_DEFAULTS)
     assert canonical_identity_config(configured) == legacy
+    c2_cfg = dict(CONFIG_DEFAULTS)
+    c2_cfg["event_generator"] = "overnight_level_touch_v1"
+    assert canonical_identity_config(c2_cfg)["c2_entry_style"] == "level"
+    c2_cfg["c2_entry_style"] = "touch_close"
+    assert canonical_identity_config(c2_cfg)["c2_entry_style"] == \
+        "touch_close"
+    assert canonical_identity_config(c2_cfg) != \
+        canonical_identity_config(dict(c2_cfg, c2_entry_style="level"))
     configured["variant"] = "discovery_only"
     assert canonical_identity_config(configured)["event_predicates"] == \
         "sweep_reclaim_v1"

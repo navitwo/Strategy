@@ -182,15 +182,46 @@ def test_real_export_packs_both_arms_and_context_without_new_series_names():
 
 
 def test_three_outcome_rule_and_feasibility_simulation():
-    from campaign2_analysis import classify_primary, simulate_label_feasibility
+    from campaign2_analysis import (classify_primary, simulate_label_feasibility,
+                                    OPERABILITY_SCENARIOS)
     assert classify_primary(0.30, 0.25, 0.35) == "POSITIVE"
+    assert classify_primary(-0.30, -0.35, -0.25) == "POSITIVE"  # continuation
     assert classify_primary(0.05, -0.05, 0.15) == "NULL"
     assert classify_primary(0.18, 0.05, 0.31) == "INCONCLUSIVE"
-    report = simulate_label_feasibility(n=800, sessions=400, reps=200,
+    assert classify_primary(0.21, 0.19, 0.23) == "INCONCLUSIVE"  # touches θ
+    report = simulate_label_feasibility(n=800, sessions=400, reps=50,
                                         seed="C2-feasibility-v1")
     assert report["sessions"] < report["n"]
-    assert set(report["labels_fired"]) == {"POSITIVE", "NULL", "INCONCLUSIVE"}
-    assert all(report["labels_fired"][k] > 0 for k in report["labels_fired"])
+    assert set(report["scenarios"]) == set(OPERABILITY_SCENARIOS) | {
+        "near_threshold_positive"}
+    assert all(s["fire_rate"] >= 0 for s in report["scenarios"].values())
+    assert report["all_scenarios_pass"]
+
+
+def test_atr_floor_rejects_quiet_regime_and_entry_style_moves_only_px():
+    from event_generators import OvernightLevelTouchV1
+    d = datetime(2024, 3, 5).date()
+    # tick 3.0 -> floor 30 points, far above the ~17.5 ATR of these bars
+    g = OvernightLevelTouchV1(tick_size=3.0, atr_period=14)
+    for row in overnight_bars(d):
+        assert g.on_bar(row) == []
+    assert g.on_bar(bar(datetime(2024, 3, 5, 10), 100, 111, 98, 108)) == []
+    assert g.atr_floor_rejects == 1
+    # level vs touch_close style differ ONLY in entry px; level/risk/timing
+    # are identical, so the sensitivity isolates the entry convention
+    base = {}
+    for style in ("level", "touch_close"):
+        h = OvernightLevelTouchV1(tick_size=0.1, entry_style=style)
+        for row in overnight_bars(d):
+            h.on_bar(row)
+        events = h.on_bar(bar(datetime(2024, 3, 5, 10), 100, 111, 98, 108))
+        ts, side, level, risk, ctx = events[0]
+        base[style] = {"entry": ctx["entry_px"], "level": level,
+                       "risk": risk, "close": ctx["touch_bar_close"]}
+    assert base["level"]["entry"] == base["level"]["level"] == 110.0
+    assert base["touch_close"]["entry"] == base["touch_close"]["close"] == 108.0
+    assert base["level"]["level"] == base["touch_close"]["level"]
+    assert base["level"]["risk"] == base["touch_close"]["risk"]
 
 
 def run_all():

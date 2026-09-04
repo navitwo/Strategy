@@ -123,7 +123,8 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
 
         self.tick = tick_sz
         self.event_generator = build_event_generator(
-            generator_name, self.tick, int(cfg.get("event_atr_period", 14)))
+            generator_name, self.tick, int(cfg.get("event_atr_period", 14)),
+            entry_style=str(cfg.get("c2_entry_style", "level")))
         event_minutes = int(cfg.get("event_bar_minutes", 5))
         expected_minutes = 30 if generator_name == "overnight_level_touch_v1" else 5
         if event_minutes != expected_minutes:
@@ -462,6 +463,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             for key in ("shadow_cisd", "shadow_fvg", "shadow_ifvg",
                         "level_kind", "session_date",
                         "overnight_range_points", "overnight_range_atr",
+                        "atr_points", "touch_bar_close",
                         "touch_time_et", "touch_minute_et",
                         "roll_generation"):
                 if key in context:
@@ -519,6 +521,7 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
                            "generator", "reference_level", "event_et",
                            "level_kind", "session_date",
                            "overnight_range_points", "overnight_range_atr",
+                           "atr_points", "touch_bar_close",
                            "touch_time_et", "touch_minute_et",
                            "roll_generation") if k in ev}})
                     ev["remaining"].discard(h)
@@ -727,6 +730,10 @@ class SweepCisdIfvgAlgorithm(QCAlgorithm):
             if sidecap.is_side_capture(self.cfg):
                 for key, value in sidecap.side_capture_runtime(self).items():
                     RT[key] = str(value)
+            if str(self.cfg.get("event_generator")) == \
+                    "overnight_level_touch_v1":
+                RT["c2_atr_floor_rejects"] = str(getattr(
+                    self.event_generator, "atr_floor_rejects", 0))
             # no-order invariant: execution/reconciliation counters are
             # structurally zero for this engine.
             for k2 in ("d_cycles_opened", "d_atomic_exits", "d_n_fillevents",

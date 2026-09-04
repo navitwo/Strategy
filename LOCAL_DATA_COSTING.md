@@ -56,6 +56,18 @@ Actual per-ticker cost is somewhat lower because holidays remove files, but it r
 
 Source: https://www.quantconnect.com/docs/v2/lean-cli/datasets/quantconnect/futures
 
+## Exact-quote gate (executed 2026-09-04)
+
+`POST https://api.databento.com/v0/metadata.get_cost` (dataset GLBX.MDP3,
+symbols NQ.FUT,GC.FUT, stype_in=parent, ohlcv-1m and definition,
+date_range 2010-06-07,2025-01-01) returned `{"detail":"Not authenticated"}`:
+the endpoint is reachable but **requires a Databento API key**, and none
+exists in this environment (no env var, no `~/.databento`, no ignored env
+file). The user must create a free key at databento.com and provide it via
+the standard environment boundary (`DATABENTO_API_KEY` in an ignored file);
+then `d47_databento_quote.py` prints the exact cost with zero data
+downloaded and zero bytes purchased.
+
 ## Decision
 
 1. Obtain the free Databento exact quote before any download.

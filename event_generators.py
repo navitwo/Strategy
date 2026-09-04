@@ -81,10 +81,15 @@ class OvernightLevelTouchV1(EventGenerator):
     """
     name = "overnight_level_touch_v1"
 
-    def __init__(self, tick_size, atr_period=14):
+    def __init__(self, tick_size, atr_period=14, atr_floor_ticks=10,
+                 entry_style="level"):
         self.tick_size = float(tick_size)
         self.atr_period = int(atr_period)
-        if self.tick_size <= 0 or self.atr_period < 2:
+        self.atr_floor = float(atr_floor_ticks) * self.tick_size
+        if entry_style not in ("level", "touch_close"):
+            raise ValueError("c2 entry style must be level or touch_close")
+        self.entry_style = entry_style
+        if self.tick_size <= 0 or self.atr_period < 2 or atr_floor_ticks < 0:
             raise ValueError("invalid tick/ATR specification")
         self._prev_close = None
         self._trs = []
@@ -94,6 +99,9 @@ class OvernightLevelTouchV1(EventGenerator):
         self._levels = None
         self._touched = set()
         self._roll_generation = 0
+        # public so the export can publish the floor's reject denominator;
+        # deliberately NOT reset by on_rollover -- it is a run-level total
+        self.atr_floor_rejects = 0
 
     @staticmethod
     def _trade_date(et):
@@ -173,14 +181,34 @@ class OvernightLevelTouchV1(EventGenerator):
                 if not touched or kind in self._touched:
                     continue
                 self._touched.add(kind)
+                # Amendment 3 (2026-09-04, pre-data): a tiny ATR shrinks the
+                # 0.5R stop until it dies inside noise, inflating stop-first
+                # rates in quiet regimes. The floor is fail-closed admission;
+                # the raw ATR travels in context so the realized distribution
+                # and retention rate stay auditable either way.
+                if atr < self.atr_floor:
+                    self.atr_floor_rejects += 1
+                    continue
+                # Amendment 4 (2026-09-04, pre-data): the level entry is the
+                # resting-limit primary; the touch-bar close entry is the
+                # declared sensitivity that prices in the post-touch adverse
+                # move inside the bar which level-entry resolution hides.
+                # Selected by the frozen c2_entry_style config identity, so
+                # the two passes differ ONLY in entry convention: identical
+                # levels, risk_dist, timing, horizons, and ambiguity rule.
+                touch_close = float(row["close"])
                 context = {
                     "generator": self.name,
                     "level_kind": kind,
                     "session_date": td.isoformat(),
                     "overnight_range_points": round(width, 10),
                     "overnight_range_atr": round(width / atr, 10),
+                    "atr_points": round(atr, 10),
                     "touch_time_et": et.strftime("%H:%M"),
                     "touch_minute_et": minute,
+                    "entry_px": (level if self.entry_style == "level"
+                                 else touch_close),
+                    "touch_bar_close": touch_close,
                     "resolve_both_directions": True,
                     "roll_generation": self._roll_generation,
                 }
@@ -191,11 +219,14 @@ class OvernightLevelTouchV1(EventGenerator):
         return events
 
 
-def build_event_generator(name, tick_size, atr_period=14):
+def build_event_generator(name, tick_size, atr_period=14,
+                          atr_floor_ticks=10, entry_style="level"):
     if name == "generator_v1":
         return SweepReclaimGeneratorV1()
     if name == "overnight_level_touch_v1":
-        return OvernightLevelTouchV1(tick_size, atr_period)
+        return OvernightLevelTouchV1(tick_size, atr_period,
+                                     atr_floor_ticks=atr_floor_ticks,
+                                     entry_style=entry_style)
     raise ValueError(f"unknown event generator: {name!r}")
 
 

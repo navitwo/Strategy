@@ -15,7 +15,7 @@ CONFIG_KEYS = (
     "entry_mode", "random_entry_prob", "variant", "event_horizons",
     "depth_min_bps", "depth_max_bps", "stop_buffer_bps", "counter_bias_arm",
     "event_predicates", "random_control_seed", "event_generator",
-    "event_bar_minutes", "event_atr_period")
+    "event_bar_minutes", "event_atr_period", "c2_entry_style")
 
 CONFIG_DEFAULTS = {
     "instrument": "MNQ", "start_date": "2023-01-03", "end_date": "2025-04-30",
@@ -31,6 +31,7 @@ CONFIG_DEFAULTS = {
     "variant": "candidate", "event_predicates": "sweep_reclaim_v1",
     "event_generator": "generator_v1", "event_bar_minutes": 5,
     "event_atr_period": 14,
+    "c2_entry_style": "level",
     "random_control_seed": "RTC2-20260827-v1",
     "event_horizons": [30, 60, 120, 240], "depth_min_bps": 0.0,
     "depth_max_bps": 0.0, "stop_buffer_bps": 0.0,
@@ -45,6 +46,11 @@ def canonical_identity_config(cfg):
         identity.pop("event_predicates")
     if identity.get("variant") != "random_time_control":
         identity.pop("random_control_seed", None)
+    # Campaign-2 axes only join the experiment identity when the C2 generator
+    # is active; every Campaign-1 era identity stays byte-stable.
+    if identity.get("event_generator", "generator_v1") != \
+            "overnight_level_touch_v1":
+        identity.pop("c2_entry_style", None)
     return identity
 
 

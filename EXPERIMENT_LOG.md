@@ -438,5 +438,42 @@ after matched side and empirical slots change the dispersion.
   θ=±0.2R. Everything else is exploratory. The classifier must demonstrate
   POSITIVE (both directions), NULL, and INCONCLUSIVE reachability by fixed-seed
   simulation at achievable n before any launch.
+
+## 2026-09-04 — Campaign 2 pre-data amendments + both gates executed
+
+- Four pre-data amendments (legitimate: no market data touched). (1) Feasibility
+  is now a grid n ∈ {200…3200} reporting the minimum passing n, because the
+  achievable sample (~1,500–6,000 physical events over ~7,300 slots) is unknown;
+  the post-data replay becomes a pass/fail against a frozen number. (2) A
+  Δ=+0.3R MDE probe was added to the scenario set. (3) ATR floor of 10 ticks
+  declared as a fail-closed admission filter (quiet-regime stop-first
+  inflation); the realized ATR distribution must ship with the ledger. (4) A
+  touch-bar-close entry sensitivity declared via `c2_entry_style` — the
+  passive-limit-vs-marketable question from Campaign 1; the sole primary stays
+  level-entry.
+- Also fixed during this pass: `classify_primary` emitted POSITIVE only for
+  the reversal direction, contradicting prereg §5 which requires POSITIVE for
+  a complete CI strictly below −θ (continuation) as well. RED via the new
+  continuation CI case, GREEN after.
+- **Feasibility gate PASSED pre-data** (`c2_feasibility_grid.json`, seed
+  C2-feasibility-v1, 200 reps): minimum_passing_n = 200; POSITIVE/NULL fire
+  100% at every grid n; the 0.3R band is detectable from n≥200. The
+  knife-edge boundary scenario degraded to 67.5% at n=3200, which exposed a
+  design defect in my first cut of the criterion: requiring ≥80% INCONCLUSIVE
+  firing AT EXACTLY θ for all n demands an inconsistent estimator (a
+  concentrating CI at the true boundary flips POSITIVE/NULL ~50/50, so the
+  boundary INCONCLUSIVE rate is forced toward 0 as n grows). Criterion
+  restated pre-data and documented in prereg §6a: informative labels
+  (POSITIVE, NULL) must fire ≥80% at achieved n/sd; INCONCLUSIVE must be
+  *emissible* (≥80% at some grid n — satisfied at 200), never reliable at the
+  knife edge. θ, geometry, cell, horizon, estimator, clustering unchanged.
+- **Databento quote gate BLOCKED on an API key, not on data cost**:
+  metadata.get_cost answered `{"detail":"Not authenticated"}` for
+  GLBX.MDP3 / NQ.FUT+GC.FUT / ohlcv-1m+definition / 2010-06-07→2025-01-01.
+  `d47_databento_quote.py` is ready (env-var or ignored `*.env` file, key
+  never printed); it needs a user-supplied `DATABENTO_API_KEY`. No download,
+  no purchase.
+- Standing operational rule (user): NO `git stash` in this repository —
+  work-in-progress goes to a scratch branch commit instead.
 - No market data has been pulled and no cloud run, strategy backtest,
   optimization, validation, or holdout access is authorized by this entry.

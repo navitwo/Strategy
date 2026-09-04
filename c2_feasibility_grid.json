@@ -1,0 +1,261 @@
+{
+  "all_firing": true,
+  "frozen_post_data_gate": "achieved n >= minimum_passing_n; at achieved n/sd POSITIVE and NULL fire >=80% (INCONCLUSIVE emissibility already shown on the grid; see prereg section 6a)",
+  "grid": [
+    {
+      "all_scenarios_pass": true,
+      "bounded_estimator": "mean payoff winsorized to [-0.5R,+2.0R]",
+      "fire_floor": 0.8,
+      "n": 200,
+      "per_obs_sd_R": 0.45,
+      "primary_cell": "T2S0.5",
+      "primary_horizon_min": 120,
+      "reps_per_scenario": 200,
+      "scenarios": {
+        "boundary_inconclusive": {
+          "delta_R": 0.2,
+          "expected_label": "INCONCLUSIVE",
+          "fire_rate": 0.935,
+          "passes": true
+        },
+        "continuation_positive": {
+          "delta_R": -0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "near_threshold_positive": {
+          "delta_R": 0.3,
+          "expected_label": "POSITIVE",
+          "fire_rate": 0.97,
+          "passes": true
+        },
+        "null_equivalent": {
+          "delta_R": 0.0,
+          "expected_label": "NULL",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "reversal_positive": {
+          "delta_R": 0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        }
+      },
+      "seed": "C2-feasibility-v1",
+      "sessions": 100,
+      "theta_R": 0.2
+    },
+    {
+      "all_scenarios_pass": true,
+      "bounded_estimator": "mean payoff winsorized to [-0.5R,+2.0R]",
+      "fire_floor": 0.8,
+      "n": 400,
+      "per_obs_sd_R": 0.45,
+      "primary_cell": "T2S0.5",
+      "primary_horizon_min": 120,
+      "reps_per_scenario": 200,
+      "scenarios": {
+        "boundary_inconclusive": {
+          "delta_R": 0.2,
+          "expected_label": "INCONCLUSIVE",
+          "fire_rate": 0.92,
+          "passes": true
+        },
+        "continuation_positive": {
+          "delta_R": -0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "near_threshold_positive": {
+          "delta_R": 0.3,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "null_equivalent": {
+          "delta_R": 0.0,
+          "expected_label": "NULL",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "reversal_positive": {
+          "delta_R": 0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        }
+      },
+      "seed": "C2-feasibility-v1",
+      "sessions": 200,
+      "theta_R": 0.2
+    },
+    {
+      "all_scenarios_pass": true,
+      "bounded_estimator": "mean payoff winsorized to [-0.5R,+2.0R]",
+      "fire_floor": 0.8,
+      "n": 800,
+      "per_obs_sd_R": 0.45,
+      "primary_cell": "T2S0.5",
+      "primary_horizon_min": 120,
+      "reps_per_scenario": 200,
+      "scenarios": {
+        "boundary_inconclusive": {
+          "delta_R": 0.2,
+          "expected_label": "INCONCLUSIVE",
+          "fire_rate": 0.86,
+          "passes": true
+        },
+        "continuation_positive": {
+          "delta_R": -0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "near_threshold_positive": {
+          "delta_R": 0.3,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "null_equivalent": {
+          "delta_R": 0.0,
+          "expected_label": "NULL",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "reversal_positive": {
+          "delta_R": 0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        }
+      },
+      "seed": "C2-feasibility-v1",
+      "sessions": 400,
+      "theta_R": 0.2
+    },
+    {
+      "all_scenarios_pass": true,
+      "bounded_estimator": "mean payoff winsorized to [-0.5R,+2.0R]",
+      "fire_floor": 0.8,
+      "n": 1600,
+      "per_obs_sd_R": 0.45,
+      "primary_cell": "T2S0.5",
+      "primary_horizon_min": 120,
+      "reps_per_scenario": 200,
+      "scenarios": {
+        "boundary_inconclusive": {
+          "delta_R": 0.2,
+          "expected_label": "INCONCLUSIVE",
+          "fire_rate": 0.865,
+          "passes": true
+        },
+        "continuation_positive": {
+          "delta_R": -0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "near_threshold_positive": {
+          "delta_R": 0.3,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "null_equivalent": {
+          "delta_R": 0.0,
+          "expected_label": "NULL",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "reversal_positive": {
+          "delta_R": 0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        }
+      },
+      "seed": "C2-feasibility-v1",
+      "sessions": 800,
+      "theta_R": 0.2
+    },
+    {
+      "all_scenarios_pass": false,
+      "bounded_estimator": "mean payoff winsorized to [-0.5R,+2.0R]",
+      "fire_floor": 0.8,
+      "n": 3200,
+      "per_obs_sd_R": 0.45,
+      "primary_cell": "T2S0.5",
+      "primary_horizon_min": 120,
+      "reps_per_scenario": 200,
+      "scenarios": {
+        "boundary_inconclusive": {
+          "delta_R": 0.2,
+          "expected_label": "INCONCLUSIVE",
+          "fire_rate": 0.675,
+          "passes": false
+        },
+        "continuation_positive": {
+          "delta_R": -0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "near_threshold_positive": {
+          "delta_R": 0.3,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "null_equivalent": {
+          "delta_R": 0.0,
+          "expected_label": "NULL",
+          "fire_rate": 1.0,
+          "passes": true
+        },
+        "reversal_positive": {
+          "delta_R": 0.55,
+          "expected_label": "POSITIVE",
+          "fire_rate": 1.0,
+          "passes": true
+        }
+      },
+      "seed": "C2-feasibility-v1",
+      "sessions": 1600,
+      "theta_R": 0.2
+    }
+  ],
+  "mde_probe": {
+    "delta_R": 0.3,
+    "fire_rate_by_n": {
+      "200": 0.97,
+      "400": 1.0,
+      "800": 1.0,
+      "1600": 1.0,
+      "3200": 1.0
+    },
+    "minimum_passing_n": 200,
+    "statement": "0.3R detectable at n>=200"
+  },
+  "minimum_passing_n": 200,
+  "operability_scenarios": [
+    "reversal_positive",
+    "continuation_positive",
+    "null_equivalent",
+    "boundary_inconclusive"
+  ],
+  "per_obs_sd_R": 0.45,
+  "reps_per_scenario": 200,
+  "scenarios": {
+    "boundary_inconclusive": 0.2,
+    "continuation_positive": -0.55,
+    "near_threshold_positive": 0.3,
+    "null_equivalent": 0.0,
+    "reversal_positive": 0.55
+  },
+  "seed": "C2-feasibility-v1",
+  "theta_R": 0.2
+}
