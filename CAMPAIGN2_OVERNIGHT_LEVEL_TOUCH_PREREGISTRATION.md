@@ -3,7 +3,11 @@
 **Status:** FROZEN PRE-REGISTRATION — rules immutable. **DEV pass EXECUTED
 2026-09-04** (local pipeline, guard-verified, dev window only; results in
 `c2_local_study.json`, integrity tests in `test_campaign2_ledger.py`).
-NO strategy backtest, NO optimization; validation/holdout remain LOCKED.
+**ARCHIVED 2026-09-04** on DEV evidence: both primaries NULL, screening
+significant_not_tradable both, no promotion trigger; filed as the
+hypothesis generator for Campaign 3 — see `CAMPAIGN2_ONLT_ARCHIVE.md`
+(figure tests in `test_campaign2_archive.py`). Validation/holdout were
+never opened and remain LOCKED. NO strategy backtest, NO optimization.
 **Protocol:** `C2-ONLT-v1`
 **Frozen:** 2026-09-01  
 **Validation/holdout:** LOCKED

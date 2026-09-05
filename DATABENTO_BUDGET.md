@@ -81,6 +81,17 @@ per-UTC-day .dbn.zst members. Verify after any restore:
   was the cost decision; re-quotes shift daily as the end date rolls.
 - ES/YM/RTY were deliberately NOT included in this purchase (design
   decision deferred, not an accident of the download).
+- **Replication-venue quotes for Campaign 3 (2026-09-04, free
+  `metadata.get_cost`, NOT purchased):** GLBX.MDP3, continuous,
+  2010-06-07→2026-09-04 excl., ohlcv-1m + definition — SI.n.0
+  $18.7710, PL.n.0 $14.8620, HG.n.0 $18.5787; all three jointly
+  **$52.2116** (per-symbol sum and joint quote agree to the cent).
+  Against inferred $86.6398 that leaves ≈$34.43 margin. Note the
+  vendor's live-data boundary: end must precede 2026-09-04T17:41Z
+  (first attempt at 2026-09-05 was rejected 422
+  `dataset_unavailable_range`). Quotes drift daily as the end rolls;
+  re-quote before any purchase decision, then rule 1 (portal
+  re-verification + stated ceiling) governs.
 - Guard (c) coverage (updated 2026-09-04, pre-study): the local QC bundle
   covers gc (comex) ordinary weekdays 2013-10 and es (cme) — reconciled:
   gc only. NQ and every ROLL window are now reconciled against LEAN

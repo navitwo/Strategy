@@ -725,3 +725,54 @@ after matched side and empirical slots change the dispersion.
   locked and unread (DEV_END gate enforced in code, in the fixtures,
   and in the committed ledger). No Databento spend (cloud dumps cost
   subscription minutes only).
+
+## 2026-09-04 — C2-ONLT-v1 ARCHIVED as Campaign 3 hypothesis generator
+
+- Archive document `CAMPAIGN2_ONLT_ARCHIVE.md`: verdicts unchanged (both
+  primaries NULL, screening significant_not_tradable both, no promotion
+  trigger, validation/holdout never opened). Written to function as a
+  generator, recording four things the bare null understates:
+  (1) the A/B split was load-bearing — NQ +0.0536R reversal vs GC
+      -0.0878R continuation, opposite signs, pooled -0.0171R ~ zero:
+      the frozen single-primary would have cancelled the study into
+      nothing; (2) NQ's effect does not survive realistic entry
+      (+0.0536 -> +0.0148 optimistic -> -0.0208 touch-close, SIGN FLIP —
+      adverse-selection signature per Campaign 1), while GC holds sign
+      and magnitude across all three specs (-0.0878/-0.1449/-0.1311);
+      (3) EXPLORATORY horizon profile — GC continuation significant at
+      30m (-0.096) and 60m (-0.076), decaying to ns by 120/240m; NQ ns
+      until 240m (-0.161, significant) — opposite time profiles; (4)
+      EXPLORATORY touch split at 120m — overnight-high touches carry the
+      whole effect both markets (NQ -0.151, GC -0.125), lows flat
+      (+0.018/+0.024).
+- (3)/(4) labelled post-hoc explicitly (eight + four comparisons after
+  seeing data); leads, not findings; zero promotion power. Non-tradable
+  stated plainly: GC best case ~0.13R against ~0.2R round-trip friction;
+  the NULLs stand and are not relitigable.
+- Reproducibility: `c2_archive_analysis.py` recomputes every archived
+  figure offline from committed `c2_local_study.json` — primary-CI
+  bit-match self-check via the study's own imported `clustered_ci`
+  before anything exploratory runs; exploratory point = event-mean with
+  session-cluster bootstrap CI (4000 draws) + 25-seed robustness sweep
+  (every sig cell share 1.0, every ns cell 0.0 — no knife-edge labels).
+  Permanent test `test_campaign2_archive.py` (6 green) pins the quoted
+  figures, sign relationships, the exploratory flag, and verdict-
+  immutability. Full suite: 34 green (6 archive + 6 ledger + 22 guards).
+- Successor constraints recorded in the archive (hard-won): no 3m/5m
+  bars (short horizon = shorter hold on 30m bars; C1 proved ~0.2R
+  friction dominates at 5m); wider stop / possible time-based exit is
+  the design lever; replication venue must not be GC's sealed
+  validation/holdout; SI/PL/HG (related metals) named as the clean
+  venue; feasibility-before-freezing; Campaign 3 pre-registration
+  deliberately NOT drafted.
+- Free quotes only (zero spend), 2026-09-04: SI.n.0 $18.7710 / PL.n.0
+  $14.8620 / HG.n.0 $18.5787 continuous front-month 2010-06-07 ->
+  2026-09-04 excl., ohlcv-1m+definition; joint $52.2116 (= sum, no
+  multi-symbol discount at this tier). Against inferred balance $86.6398
+  -> three-metal venue leaves ~$34.43 margin. Vendor boundary hit:
+  end 2026-09-05 rejected (422 dataset_unavailable_range; data ends
+  2026-09-04T17:41Z) — quoted at 2026-09-04 excl. consistent with the
+  NQ/GC purchase. Recorded in DATABENTO_BUDGET.md. NOTHING purchased;
+  any purchase needs portal re-verification + stated ceiling per rule 1.
+- No Campaign 3 pre-registration drafted; no optimization; no new
+  backtests; validation and holdout remain locked and unread.
