@@ -95,21 +95,26 @@ on NQ carries committed cluster-mean −0.1846R (continuation).
 - **Rung 3 — + fresh FVG.** At a rung-2 event: a fresh gap created
   by the displacement leg itself. For a low touch (long reversal):
   the displacement bar jumps clear of the touch bar —
-  `d.low > touch.high`, gap zone (touch.high, d.low),
-  gap_hi = d.low. Mirror for high touch (`d.high < touch.low`,
-  gap zone (d.high, touch.low), gap_lo = touch.low). A gap requiring
-  a whole-bar jump is the strictest bar-level reading of "the
+  `d.low > touch.high`, void (touch.high, d.low); the retrace
+  boundary for rung 4 is the NEAR edge `edge = d.low`. Mirror for
+  high touch (short): `d.high < touch.low`, void (d.high, touch.low),
+  `edge = d.high`. (PRE-RESULTS CORRECTION 2026-09-05, before any
+  number existed: first draft set the short fill to `touch.low`, the
+  FAR edge — a label-mirroring bug; the fill must mirror semantics,
+  proximal-to-entry side, as the long case does.) A gap requiring a
+  whole-bar jump is the strictest bar-level reading of "the
   displacement leaves a void" — declared, not tuned. Stamp = d (the
-  bar completing the gap); entry/arms/window as rung 2.
+  bar completing the gap); entry/arms/window as rung 2. Events with
+  no such jump at the displacement bar drop from rungs 3–5.
 - **Rung 4 — + retracement entry.** From rung 3: the first
-  completed bar r after d that retraces INTO the gap from the
-  correct side: low-touch case r.open ≥ gap_hi and r.low ≤ gap_hi
-  (open above the boundary, pierce into it — unambiguous first
-  touch; a bar that both pierces AND closes below gap_lo, having
-  jumped the whole void, is kept with its fill still at gap_hi since
-  the boundary order is fixed by the open precondition); fill =
-  gap_hi (mirror: gap_lo). Deadline 6 bars after d; events failing
-  the deadline or never opening on the far side drop. Stamp = r;
+  completed bar r after d that retraces INTO the void from the side
+  the trade enters: long case r.open ≥ edge and r.low ≤ edge
+  (starts above the near boundary, pierces down to it — unambiguous
+  first touch by the open precondition); short mirrors (r.open ≤
+  edge and r.high ≥ edge). Fill = edge (declared: the touch fill; a
+  bar piercing the whole void from beyond it still fills at edge —
+  the open precondition fixes the ordering). Deadline 6 bars after
+  d; bars that never open beyond edge first drop. Stamp = r;
   outcomes = 4 bars after r; risk unit still R_ATR; **this rung's
   entry price is the gap boundary, not the level** — it is the
   playbook's actual trade.
