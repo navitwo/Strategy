@@ -1,0 +1,9 @@
+{
+ "n_windows": 2611,
+ "n_done": 2611,
+ "trades_usd": 272.4014,
+ "mbp10_usd": 780.5778,
+ "failures": [],
+ "n_failures": 0,
+ "note": "exact per-window sum over 2,611 merged windows; two transient-failed windows re-quoted offline and added"
+}

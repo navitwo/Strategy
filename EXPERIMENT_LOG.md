@@ -861,3 +861,28 @@ after matched side and empirical slots change the dispersion.
   generator/chronology all green (verified below); artifact, archive,
   probe, protocol, budget, prereg §8/§8a consistent. No purchases;
   validation/holdout sealed and unread.
+
+## 2026-09-05 — C3 absorption-proxy Gate A: quotes only, DEAD-UNTESTED filing
+
+- Directive: no Campaign 3 prereg, no order-book pipeline; bounded cheap
+  proxy test of Order-Flow Absorption & Reload Reversal's falsifiable core
+  claim (low aggressor price efficiency at a level predicts reversal),
+  starting with free metadata.get_cost quotes.
+- Protocol C3_ABSORPTION_PROXY_PROTOCOL.md frozen and committed BEFORE any
+  quote existed (19398ed): +/-60min windows for all 3,033 committed NQ
+  events (2,611 merged, 5,606.5 h), outcomes-blind A-split rule,
+  MAX_USD=$40, session-date clustered decision at 120m fwd_R (T_high AND
+  T_low CIs entirely > +0.10R to survive).
+- Gate A (free; 5,222+2 get_cost calls, zero data): NQ trades full
+  $1,254.87; NQ mbp-10 full $4,038.89; ES trades full $1,939.52; ES mbp-10
+  full $4,036.03; conditional NQ trades $272.40; conditional NQ mbp-10
+  $780.58. Conditional trades = 6.8x the $40 ceiling, 3.1x the entire
+  inferred $86.64 balance; mechanism-faithful mbp-10 = 9x balance even
+  event-scoped. No affordable slice exists at 3,033 events.
+- Gate B: NO purchase (rule mechanical). Analysis script written but
+  unexecuted. Verdict per protocol S6: absorption hypothesis
+  UNTESTED-AT-AFFORDABLE-COST - CLOSED; six quotes are the filing
+  evidence. ES/YM/RTY reservation untouched; validation/holdout sealed;
+  no prereg drafted; theta=0.2R unchanged; friction caveat stated in the
+  record (~0.5R at the strategy's own 2-point stops; seconds-scale
+  backtests least reliable where queue position dominates).

@@ -1,0 +1,22 @@
+{
+ "NQ.n.0|trades": {
+  "ok": true,
+  "usd": 1254.872800290585,
+  "error": null
+ },
+ "NQ.n.0|mbp-10": {
+  "ok": true,
+  "usd": 4038.888816460967,
+  "error": null
+ },
+ "ES.n.0|trades": {
+  "ok": true,
+  "usd": 1939.523164093494,
+  "error": null
+ },
+ "ES.n.0|mbp-10": {
+  "ok": true,
+  "usd": 4036.031027339399,
+  "error": null
+ }
+}

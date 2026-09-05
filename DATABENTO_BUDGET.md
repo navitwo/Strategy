@@ -47,6 +47,7 @@ $125.00 − $124.68 = **$0.32** gap. No unexplained spend remains.
 | 2026-08-09 | XNAS sample jobs ×3 (trades/ohlcv-1m/mbo MSFT) | — | $0.32 | $124.68 (portal-verified 2026-09-04) |
 | 2026-09-04 | C2 purchase: GLBX.MDP3 ohlcv-1m + definition, NQ.n.0+GC.n.0 continuous, 2010-06-07→2026-09-04 (d48, ceiling $45) | **$38.04** (re-quoted immediately pre-submit) | ohlcv-1m **$38.031821** + definition **$0.008394** (job fields; sum $38.0402 = quote exactly) | **≈ $86.64** |
 | 2026-09-04 | C3 replication-venue quote SI.n.0/PL.n.0/HG.n.0 (metadata.get_cost, free) | $52.2116 (per-symbol 18.7710/14.8620/18.5787; joint = sum) | **$0.00 — DECLINED by decision, not purchased** | **≈ $86.64 unchanged** |
+| 2026-09-05 | C3 absorption-proxy Gate A quotes (metadata.get_cost, free; full-range NQ/ES trades+mbp-10, conditional ±60min windows for 3,033 NQ events) | NQ trades $1,254.87 / NQ mbp-10 $4,038.89 / ES trades $1,939.52 / ES mbp-10 $4,036.03 / **cond. NQ trades $272.40** / cond. NQ mbp-10 $780.58 | **$0.00 — no purchase; conditional trades 6.8× the frozen $40 ceiling → DEAD-UNTESTED filing (C3_ABSORPTION_GATE_A.md)** | **≈ $86.64 unchanged** |
 
 **Reservation (user decision 2026-09-04):** the SI/PL/HG broad-metals
 venue was ruled out; the remaining inferred ≈$86.64 stays **reserved for
