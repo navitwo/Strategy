@@ -34,28 +34,28 @@ decoding GC dev stream (this is the slow part)...
   "NQ": {
    "n": 3033,
    "sessions": 2570,
-   "point_cluster_mean_R": 0.053599221789883265,
-   "event_mean_R_descriptive": 0.07995384108143752,
-   "sd_contrast_R": 1.2604263310988177,
+   "point_cluster_mean_R": -0.18463035019455254,
+   "event_mean_R_descriptive": -0.022914606000659414,
+   "sd_contrast_R": 1.8703136187851253,
    "ci95_R": [
-    0.005155642023346303,
-    0.09970817120622569
+    -0.24941634241245136,
+    -0.1193579766536965
    ],
-   "sensitivity_optimistic_mean_R": 0.01483679525222552,
-   "sensitivity_touch_close_mean_R": -0.020771513353115726
+   "sensitivity_optimistic_mean_R": -0.014671941971645236,
+   "sensitivity_touch_close_mean_R": -0.04863171777118365
   },
   "GC": {
    "n": 2468,
    "sessions": 2370,
-   "point_cluster_mean_R": -0.08776371308016878,
-   "event_mean_R_descriptive": -0.08002431118314425,
-   "sd_contrast_R": 0.9314670182333227,
+   "point_cluster_mean_R": -0.09578059071729958,
+   "event_mean_R_descriptive": -0.05733387358184765,
+   "sd_contrast_R": 1.6144535227416408,
    "ci95_R": [
-    -0.12257383966244725,
-    -0.053164556962025315
+    -0.16487341772151898,
+    -0.03280590717299578
    ],
-   "sensitivity_optimistic_mean_R": -0.14485413290113452,
-   "sensitivity_touch_close_mean_R": -0.1310777957860616
+   "sensitivity_optimistic_mean_R": -0.09076175040518639,
+   "sensitivity_touch_close_mean_R": -0.06482982171799027
   }
  },
  "anchored_central_sd_R": 1.6015,
@@ -66,22 +66,22 @@ decoding GC dev stream (this is the slow part)...
    "market": "NQ",
    "n": 3033,
    "sessions": 2570,
-   "point_R": 0.053599221789883265,
-   "ci_low_R": 0.005155642023346303,
-   "ci_high_R": 0.09970817120622569,
+   "point_R": -0.18463035019455254,
+   "ci_low_R": -0.24941634241245136,
+   "ci_high_R": -0.1193579766536965,
    "theta_R": 0.2,
-   "confirmatory": "NULL",
-   "screening": "significant_not_tradable",
-   "confirmatory_required": "NULL",
+   "confirmatory": "INCONCLUSIVE",
+   "screening": "significant_beyond_theta",
+   "confirmatory_required": "INCONCLUSIVE",
    "operable": true
   },
   "primary_b_gold": {
    "market": "GC",
    "n": 2468,
    "sessions": 2370,
-   "point_R": -0.08776371308016878,
-   "ci_low_R": -0.12257383966244725,
-   "ci_high_R": -0.053164556962025315,
+   "point_R": -0.09578059071729958,
+   "ci_low_R": -0.16487341772151898,
+   "ci_high_R": -0.03280590717299578,
    "theta_R": 0.2,
    "confirmatory": "NULL",
    "screening": "significant_not_tradable",
@@ -90,7 +90,7 @@ decoding GC dev stream (this is the slow part)...
   }
  },
  "pooled_descriptive": {
-  "point_R": -0.017082245645142758,
+  "point_R": -0.14020547045592607,
   "label": "descriptive_only_never_a_verdict"
  },
  "theta_R": 0.2,

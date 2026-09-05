@@ -776,3 +776,88 @@ after matched side and empirical slots change the dispersion.
   any purchase needs portal re-verification + stated ceiling per rule 1.
 - No Campaign 3 pre-registration drafted; no optimization; no new
   backtests; validation and holdout remain locked and unread.
+
+## 2026-09-05 — C2 archive -> residue stop-widening probe -> SOUNDNESS GATE FOUND A RESOLVER DEFECT -> corrected re-execution -> residue DEAD
+
+- Directive: do not purchase SI/PL/HG (broad-metals play ruled out;
+  ~$86.64 inferred reserved for possible ES/YM/RTY index-complex pull;
+  credits die 2027-02-09 regardless). Before any C3 prereg or purchase,
+  run one free offline check on the committed ledger: does GC's
+  overnight-high continuation survive a wider stop? Pre-commit the
+  decision rule BEFORE results; DEAD -> record plainly and close the
+  residue; holds with margin -> evidence basis for a prereg.
+- DATABENTO_BUDGET.md updated: $52.2116 three-metal quote DECLINED by
+  decision, zero spend; reservation + expiry recorded.
+- Rule committed first (fb6fe63): C2_RESIDUE_STOPWIDEN_PROTOCOL.md —
+  family A (target fixed 2R; stops 0.5/1.0/1.5/2.0R) + family B (target
+  2x stop); extreme-based [lo,hi] bracket over first-touch orderings;
+  scaling identity (margin sign = |c| vs 0.2 ATR); DEAD / VIABLE-BOUND /
+  INCONCLUSIVE with conservative-reading-wins; upper-bound-only limit
+  (mfe/mae first-touch blindness = the C1 defect class) stated BEFORE
+  running; target-family ambiguity (2R fixed vs 2x stop) resolved by
+  running both. c2_residue_stopwiden.py wired to c2_archive_analysis's
+  declared bootstrap convention.
+- SOUNDNESS GATE (the whole point): its baseline self-check — stored
+  bar-path contrast must sit inside the extreme bracket — FAILED on
+  first execution. Traced to root cause: resolve_arm (and the
+  companion mfe/mae loop) recorded adverse POSITIVE while testing
+  adv <= -s_R. The frozen 0.5R stop could never fire on real adverse
+  moves; profit-runs paid fake stops. C1's hosted resolvers
+  (scifvg_main:481, random_time_control:1326) record adverse NEGATIVE;
+  the C2 local port diverged from the reference implementation.
+  Synthetic proof (bar 0.5R below a long entry -> old code: 0.0;
+  correct: -0.5). Every stored barrier payoff in the committed DEV
+  artifact was priced under the inversion.
+- Fix discipline (standing rule, executed): permanent RED->GREEN
+  regression first (test_resolve_arm_semantics.py: 7/8 RED pre-fix,
+  8/8 GREEN post, incl. C1-parity property test); corrected two code
+  sites in c2_local_study.py with dated comments; soundness gate
+  promoted to permanent ledger test
+  (test_payoffs_consistent_with_recorded_extremes, 1e-5 rounding
+  slack at boundary, fails loudly on convention regressions); frozen
+  DEV pass RE-EXECUTED on identical inputs; field-wise diff proves
+  event population/funnel/bars/rolls/fwd_R/mfe_R byte-identical —
+  only barrier payoffs + mae_R moved. No protocol text, gate, seed,
+  window, or θ touched; no history rewritten; prereg §8 kept verbatim
+  with disclosure header, new §8a carries the corrected replay.
+- CORRECTED HEADLINES: Primary A (NQ) point -0.1846R, CI [-0.2494,
+  -0.1194] -> INCONCLUSIVE (straddles -theta; screening
+  significant_beyond_theta) — pre-fix "+0.0536 reversal" fully retracted;
+  Primary B (GC) -0.0958R [-0.1649, -0.0328] -> NULL,
+  significant_not_tradable (same label as before, direction always
+  continuation). Post-fix BOTH markets continue; the pre-fix
+  "opposite-signs cancellation made the A/B split load-bearing" story
+  was a defect artifact — retracted (the split remains right
+  methodology on design grounds). Stand-down gates pass (sd 1.8703/
+  1.6145 vs 1.5x ceiling 2.402R); NQ sd now 17% ABOVE central anchor —
+  disclosed. Cluster-vs-event NQ gap (-0.1846 vs -0.0229) disclosed.
+  No promotion trigger: GC NULL as before; INCONCLUSIVE confirms
+  nothing under §7. fwd_R-based archive points 3-4 (horizon profiles,
+  touch split on forward closes) UNCHANGED — formula defect-immune;
+  barrier touch cells re-pinned (GC-high barrier contrast now ns
+  post-fix; the high/low asymmetry survives only in the exact fwd_R
+  statistic).
+- PROBE (corrected ledger, soundness gate now PASSES — bracket
+  contains stored exact): GC overnight-high family A best-case bound
+  lo = -0.2439 at s=0.5 decaying to -0.1869 at s=1.0; conservative hi
+  sign-inverted (positive) at 0.5-1.5R; no cell's CI wholly clears the
+  0.2 friction line on either end. Time-exit analogue (exact,
+  ordering-free): -0.2799/-0.2681/-0.2496/-0.2889 at 30/60/120/240m —
+  every point beyond friction, no CI wholly beyond. VERDICT UNDER THE
+  FROZEN RULE: DEAD. The residue is recorded and closed; Campaign 3
+  (if any) starts from a fresh hypothesis, which the directive and the
+  probe outcome both keep legitimate. No prereg drafted either way.
+- Archive rewritten (CAMPAIGN2_ONLT_ARCHIVE.md): §0 defect disclosure
+  (the transferable asset: a soundness gate that CAN fail caught two
+  verdict-facing artifacts <1 day after publication); §1 corrected
+  verdicts; §2 what survives / what died; §4 the probe grid +
+  degenerate-share interpretation (87-98% of events don't separate the
+  wider barriers — upper bounds were the best the method allows and
+  the best case still fails); §6 inherited constraints incl. the
+  exact-first-touch-grid requirement this probe demonstrated from the
+  inside; §7 one-liner: C2's greatest output is the gate plus its own
+  pre-committed DEAD on its final follow-up.
+- Suite state: 8 resolve-arm + 7 ledger + 6 archive + 22 guard +
+  generator/chronology all green (verified below); artifact, archive,
+  probe, protocol, budget, prereg §8/§8a consistent. No purchases;
+  validation/holdout sealed and unread.

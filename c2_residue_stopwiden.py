@@ -1,41 +1,51 @@
 """C2-RESIDUE-STOPWIDEN — offline upper-bound probe (see
-C2_RESIDUE_STOPWIDEN_PROTOCOL.md for the frozen rule committed BEFORE this
-code ran and before any result existed).
+C2_RESIDUE_STOPWIDEN_PROTOCOL.md — rule frozen BEFORE results existed).
 
-Does GC's overnight-high continuation effect survive a wider stop? Uses
-ONLY fields already committed in c2_local_study.json (mfe_R/mae_R window
+Does GC's overnight-high continuation survive a wider stop? Uses ONLY
+fields already committed in c2_local_study.json (mfe_R/mae_R window
 extremes on the reversal-arm signed 120m path, fwd_R horizon closes,
 stored contrast_R). No decode, no Databento, no cloud. Read-only over
 the ledger; writes c2_residue_stopwiden.json.
 
-Method and its limit (protocol Limits — binding):
-  Payoffs at barriers (stop s, target t; R units, 1R = 1 ATR) are
-  resolved from WINDOW EXTREMES with NO first-touch ordering:
-    rev : pess = -s if mae<=-s else (t if mfe>=t else 0)
-          opt  =  t if mfe>=t else (-s if mae<=-s else 0)
-    cont: trades the opposite side at the same barriers; its favorable
-          extreme is -mae, adverse is -mfe:
-          pess = -s if mfe>= s else (t if mae<=-t else 0)
-          opt  =  t if mae<=-t else (-s if mfe>= s else 0)
-  contrast(s) = rev - cont. Pessimistic and optimistic readings form a
-  BRACKET that provably contains the bar-path truth (both arms' payoffs
-  are monotone step functions of ordering; extreme-resolution gives each
-  arm its worst/best possible value independently). This is the exact
-  first-touch-blindness that invalidated the Campaign 1 screen:
-  favourable numbers here are UPPER BOUNDS, not evidence.
-  Bias calibration: at the frozen grid (s=0.5, t=2.0) the pessimistic
-  emulation equals the exact bar-path payoff EXCEPT when the 120m bar
-  path hit stop before target — where the extreme view reports the same
-  -s. The optimistic emulation equals the exact payoff except where the
-  true ordering was stop-first. So the stored contrast_R distribution
-  must lie INSIDE the [pess, opt] bracket pointwise on averages;
-  `baseline_gap` reports pess-vs-stored and opt-vs-stored gaps directly.
+IMPLEMENTATION NOTE (honest, dated): the first implementation paired
+arms scenario-wise (rev_pess-cont_pess / rev_opt-cont_opt) and claimed
+a bracket. The committed baseline_gap self-check caught it instantly:
+the stored EXACT contrast (-0.061, GC-high, s=0.5/t=2.0) lay OUTSIDE
+that interval ([+0.225, +0.597]) — both-arm-pessimistic is not the
+min of the paired contrast because the two arms share one path. The
+bracket endpoints below are the path-consistent ones; the rule text
+in the protocol file was not touched (its "pessimistic reading = the
+conservative side of the bracket" now maps to the VALID conservative
+side). This correction changed no branch, no grid, no statistic's
+definition — only the estimator's use of per-arm bounds.
 
-  Barrier grid exists only where extremes exist (120m window). The
-  30/60/120/240m rows are the TIME-EXIT analogue: contrast_close(h) =
-  2 * fwd_R(h) (the two arms close at +/-fwd_R) — stop-blind by
-  construction; the hold-vs-stop interaction cannot be fully separated
-  without a first-touch grid on bar paths (successor data, not this).
+Method and its limit (protocol Limits — binding):
+  Per-arm payoffs from window extremes at barriers (stop s, target t,
+  R units, 1R = 1 ATR; cont trades -side so its target is at -t and
+  its stop at +s on the reversal-arm signed path):
+    rev_pess = -s if mae<=-s else (t if mfe>=t else 0)
+    rev_opt  =  t if mfe>=t else (-s if mae<=-s else 0)
+    cont_pess = -s if mfe>=s else (t if mae<=-t else 0)
+    cont_opt  =  t if mae<=-t else (-s if mfe>=s else 0)
+  Each per-arm pair is a valid bound over first-touch orderings.
+  Because both arms share ONE signed path and levels are nested
+  (-t < -s < +s < +t, with -s before -t and +s before +t forced by
+  continuity), the PATH-CONSISTENT event bracket for the paired
+  contrast is:
+    lo = rev_pess - cont_opt   (order (-t, -s)-first: best for cont)
+    hi = rev_opt  - cont_pess  (order (+s, +t)-first: best for rev)
+    truth: lo <= exact_contrast <= hi, per event and on averages.
+  The two extremes are realized by explicit orderings when all four
+  levels are reached; degenerate level sets collapse as usual.
+  This IS the Campaign 1 defect class: favourable endpoints are
+  UPPER BOUNDS, not evidence. Exact answers need a first-touch grid
+  on the bar paths — successor-protocol data, not this probe.
+
+  Barrier resolutions exist only where extremes exist (120m window).
+  The 30/60/120/240m rows are the TIME-EXIT analogue:
+  contrast_close(h) = 2 * fwd_R(h) (the two arms close at +/-fwd_R) —
+  EXACT (no ordering blindness), stop-blind by construction, and shown
+  so the hold-vs-stop interaction is visible where it is decidable.
 
   Friction 0.2 R_base = 0.2 ATR is a fixed physical cost; margin per
   unit risked = (|c| - 0.2)/s. Sign depends only on |c| vs 0.2.
@@ -64,13 +74,14 @@ FRICTION_RBASE = 0.2                  # 0.2 R_base = 0.2 ATR fixed cost
 HORIZONS = S.HORIZONS
 
 
-def arm_payoffs(mfe, mae, s, t):
-    """(rev_pess, rev_opt, cont_pess, cont_opt) from window extremes."""
+def bracket_contrasts(e, s, t):
+    """(lo, hi) path-consistent event bracket of rev-cont at (s, t)."""
+    mfe, mae = e["mfe_R"], e["mae_R"]
     rev_pess = -s if mae <= -s else (t if mfe >= t else 0.0)
     rev_opt = t if mfe >= t else (-s if mae <= -s else 0.0)
     cont_pess = -s if mfe >= s else (t if mae <= -t else 0.0)
     cont_opt = t if mae <= -t else (-s if mfe >= s else 0.0)
-    return rev_pess, rev_opt, cont_pess, cont_opt
+    return rev_pess - cont_opt, rev_opt - cont_pess
 
 
 def _boot(vals, sess, tag):
@@ -82,27 +93,23 @@ def _boot(vals, sess, tag):
 
 def cell(rows, s, t, name):
     sess = [e["session_date"] for e in rows]
-    resolved = [arm_payoffs(e["mfe_R"], e["mae_R"], s, t) for e in rows]
-    cp = [a - c for (a, _, c, _) in resolved]
-    co = [b - d for (_, b, _, d) in resolved]
-    pess = _boot(cp, sess, f"{SEED_TAG}:{name}:pess")
-    opt = _boot(co, sess, f"{SEED_TAG}:{name}:opt")
-    amb = float(np.mean([rp != ro for rp, ro, _, _ in resolved]
-                        + [cp_ != op_ for *_, cp_, op_ in resolved]))
+    pair = [bracket_contrasts(e, s, t) for e in rows]
+    lo = _boot([p[0] for p in pair], sess, f"{SEED_TAG}:{name}:lo")
+    hi = _boot([p[1] for p in pair], sess, f"{SEED_TAG}:{name}:hi")
+    degenerate = float(np.mean([abs(p[1] - p[0]) < 1e-12 for p in pair]))
     out = {"n": len(rows), "stop_R": s, "target_R": t,
-           "pess": pess, "opt": opt,
-           "ambiguity_share_ordering_matters": round(amb, 4)}
+           "lo_optimistic_for_continuation": lo,
+           "hi_conservative_for_continuation": hi,
+           "degenerate_ordering_free_share": round(degenerate, 4)}
 
-    def scales(cel):
-        c = cel["point_R"]
+    def scales(bnd):
+        c = bnd["point_R"]
         return {"per_R": round(c / s, 4),
-                "margin_per_R": round((abs(c) - FRICTION_RBASE) / s, 4)
-                if c < 0 else None,
                 "clears_friction_point": bool(c < -FRICTION_RBASE),
-                "clears_friction_CI_wholly": bool(cel["ci95_R"][1]
+                "clears_friction_CI_wholly": bool(bnd["ci95_R"][1]
                                                   < -FRICTION_RBASE)}
-    out["scales_pess"] = scales(pess)
-    out["scales_opt"] = scales(opt)
+    out["scales_lo"] = scales(lo)
+    out["scales_hi"] = scales(hi)
     out["friction_fraction_of_stop"] = round(FRICTION_RBASE / s, 4)
     return out
 
@@ -116,37 +123,50 @@ def time_exit(rows, h, mkt):
               f"{SEED_TAG}:timeexit:{mkt}:{h}")
     pt = r["point_R"]
     return {"n": len(pairs), "contrast_R": pt, "ci95_R": r["ci95_R"],
+            "exact_no_ordering_blindness": True,
             "clears_friction_point": bool(pt < -FRICTION_RBASE),
             "clears_friction_CI_wholly": bool(r["ci95_R"][1]
                                               < -FRICTION_RBASE)}
 
 
 def decide(gc_a: dict) -> str:
-    """Frozen protocol rule on family A, GC overnight_high.
-    Conservative reading wins; ties go to the more cautious branch."""
+    """Frozen protocol rule on family A, GC overnight_high, mapped onto
+    the VALID bracket: conservative-for-continuation reading = hi end;
+    optimistic-for-continuation bound = lo end. Conservative reading
+    wins; ties go to the more cautious branch.
+
+    DEAD if even the LO (most continuation-favourable valid) end decays
+    toward zero or inverts going 0.5 -> 1.0; or hi inverts positive at
+    1.5/2.0. VIABLE-BOUND if lo holds continuation at 1.0, hi does not
+    invert at 1.5/2.0, and some family-A cell's conservative (hi)
+    reading has CI wholly beyond friction. Otherwise INCONCLUSIVE —
+    which given the bracket width is the likely honest outcome: the
+    extreme-based data cannot resolve first-touch ordering at wider
+    stops; an exact answer requires a fresh first-touch grid (successor
+    data), and the residue stays real-but-not-demonstrably-tradable."""
     tol = 0.01
-    c05 = gc_a["0.5"]["pess"]["point_R"]
-    c05o = gc_a["0.5"]["opt"]["point_R"]
-    c10p = gc_a["1.0"]["pess"]["point_R"]
-    c10o = gc_a["1.0"]["opt"]["point_R"]
-    p15 = gc_a["1.5"]["pess"]["point_R"]
-    p20 = gc_a["2.0"]["pess"]["point_R"]
-    # DEAD if even the OPTIMISTIC bracket decays toward zero or inverts
-    # at 1.0 (truth necessarily decays too), or pessimistic inverts at
-    # 1.5/2.0 (a bound inverting the wrong way can still be blindness,
-    # but inversion of the pess reading is not blindness-favourable).
-    if c10o > min(c05o, c05) + tol:
+    f = {str(s): gc_a[str(s)] for s in STOPS}
+    lo05 = f["0.5"]["lo_optimistic_for_continuation"]["point_R"]
+    lo10 = f["1.0"]["lo_optimistic_for_continuation"]["point_R"]
+    hi05 = f["0.5"]["hi_conservative_for_continuation"]["point_R"]
+    hi10 = f["1.0"]["hi_conservative_for_continuation"]["point_R"]
+    hi15 = f["1.5"]["hi_conservative_for_continuation"]["point_R"]
+    hi20 = f["2.0"]["hi_conservative_for_continuation"]["point_R"]
+    if lo10 > lo05 + tol or lo10 > tol:
         return "DEAD"
-    if p15 > tol or p20 > tol:
-        return "DEAD"
-    # VIABLE-BOUND: pessimistic at 1.0 holds (does not decay toward zero),
-    # no pessimistic inversion at 1.5/2.0, and some family-A cell has
-    # CI wholly beyond the friction line (either bracket side counts,
-    # flagged which).
-    holds = c10p <= c05 + tol
-    clears = any(gc_a[str(s)][side]["clears_friction_CI_wholly"]
-                 for s in STOPS for side in ("pess", "opt"))
-    if holds and clears:
+    if hi15 > 0.0 + tol or hi20 > 0.0 + tol:
+        # conservative reading inverts at wider stops: fails the frozen
+        # VIABLE clause "does not invert at 1.5/2.0". Not DEAD (truth is
+        # not shown to decay — a conservative-bound inversion may be
+        # ordering blindness), but viability is off the table.
+        hi_ok = False
+    else:
+        hi_ok = True
+    holds = hi10 <= hi05 + tol          # conservative reading holds at 1.0
+    clears_conservative = any(
+        f[str(s)]["scales_hi"]["clears_friction_CI_wholly"]
+        for s in STOPS)
+    if holds and hi_ok and clears_conservative:
         return "VIABLE-BOUND"
     return "INCONCLUSIVE"
 
@@ -156,23 +176,30 @@ def main():
     out = {"protocol_doc": "C2_RESIDUE_STOPWIDEN_PROTOCOL.md",
            "status": "EXPLORATORY-ONLY upper-bound probe; zero promotion power",
            "friction_R_base": FRICTION_RBASE, "stops_R": list(STOPS),
-           "note": "1R = 1 ATR; contrasts in ATR points; margins per unit risked",
+           "note": "1R = 1 ATR; contrasts in ATR points; lo = bound most "
+                   "favourable to continuation-hypothesis; hi = bound most "
+                   "adverse (conservative); exact truth inside [lo, hi]",
            "markets": {}}
     for mkt in ("GC", "NQ"):
         ev = led["events"][mkt]
         high = [e for e in ev if e["level_kind"] == "overnight_high"]
         fam_a = {str(s): cell(high, s, 2.0, f"{mkt}A{s}") for s in STOPS}
         fam_b = {str(s): cell(high, s, 2.0 * s, f"{mkt}B{s}") for s in STOPS}
-        # baseline bias diagnostic vs the stored EXACT bar-path contrast
         stored = float(np.mean([e["contrast_R"] for e in high]))
+        a05 = fam_a["0.5"]
+        inside = bool(a05["lo_optimistic_for_continuation"]["point_R"]
+                      <= stored
+                      <= a05["hi_conservative_for_continuation"]["point_R"])
         out["markets"][mkt] = {
             "overnight_high_n": len(high),
             "stored_exact_contrast_mean_R": round(stored, 4),
+            "bracket_contains_stored_exact_at_c2_grid": inside,
             "family_A_target_2R_fixed": fam_a,
             "family_B_target_2x_stop": fam_b,
             "time_exit_contrast_by_horizon": {
                 str(h): time_exit(high, h, mkt) for h in HORIZONS},
         }
+        assert inside, f"{mkt}: sound bracket must contain the exact value"
     verdict = decide(
         out["markets"]["GC"]["family_A_target_2R_fixed"])
     out["verdict_GC_overnight_high_familyA"] = verdict

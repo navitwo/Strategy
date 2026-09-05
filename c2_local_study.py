@@ -92,8 +92,16 @@ def resolve_arm(path_bars, side, entry_px, risk_dist,
     for b in path_bars:
         fav = ((b["high"] - entry_px) if side > 0
                else (entry_px - b["low"])) / rd
-        adv = ((entry_px - b["low"]) if side > 0
-               else (b["high"] - entry_px)) / rd
+        # ADVERSE IS RECORDED NEGATIVE (parity with Campaign 1's hosted
+        # resolver, scifvg_main.py:480-483 / random_time_control.py:
+        # 1325-1328). A stop hit is adv <= -s_R, i.e. price s_R deep
+        # AGAINST the arm. The pre-fix formula (entry - low) was positive
+        # on real adverse moves, so hit_s fired only on profitable runs
+        # and never on the frozen stop: the T2S0.5 payoff was inverted.
+        # Found by the C2-RESIDUE-STOPWIDEN soundness gate 2026-09-04;
+        # pinned permanently by test_resolve_arm_semantics.py.
+        adv = ((b["low"] - entry_px) if side > 0
+               else (entry_px - b["high"])) / rd
         hit_t, hit_s = fav >= t_R, adv <= -s_R
         if hit_t and hit_s:
             return -s_R if pessimistic else t_R
@@ -187,8 +195,13 @@ def study_market(market, imap):
         for b in horizon_bars:
             fav = ((b["high"] - level) if side > 0
                    else (level - b["low"])) / rd
-            adv = ((level - b["low"]) if side > 0
-                   else (b["high"] - level)) / rd
+            # C1-convention: ADVERSE RECORDED NEGATIVE (see resolve_arm
+            # parity note). Pre-fix this was (level - low)/rd for longs
+            # — positive on real adverse moves — so mae_R could never
+            # reach the stop; every pre-fix mae<0 row was a profitable
+            # excursion. Pinned by test_resolve_arm_semantics.
+            adv = ((b["low"] - level) if side > 0
+                   else (level - b["high"])) / rd
             mfe = max(mfe, fav)
             mae = min(mae, adv)
         out.append({

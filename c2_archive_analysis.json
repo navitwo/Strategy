@@ -10,13 +10,13 @@
     "market": "NQ",
     "n": 3033,
     "sessions": 2570,
-    "point_R": 0.053599221789883265,
-    "ci_low_R": 0.005155642023346303,
-    "ci_high_R": 0.09970817120622569,
+    "point_R": -0.18463035019455254,
+    "ci_low_R": -0.24941634241245136,
+    "ci_high_R": -0.1193579766536965,
     "theta_R": 0.2,
-    "confirmatory": "NULL",
-    "screening": "significant_not_tradable",
-    "confirmatory_required": "NULL",
+    "confirmatory": "INCONCLUSIVE",
+    "screening": "significant_beyond_theta",
+    "confirmatory_required": "INCONCLUSIVE",
     "operable": true
    },
    "primary_rederived_matches": true,
@@ -24,10 +24,10 @@
     "optimistic": {
      "n": 3033,
      "sessions": 2570,
-     "point_R": -0.1453,
+     "point_R": -0.191,
      "ci95_R": [
-      -0.2037,
-      -0.0811
+      -0.2627,
+      -0.1102
      ],
      "significant": true,
      "direction": "continuation",
@@ -36,10 +36,10 @@
     "touch_close": {
      "n": 3033,
      "sessions": 2570,
-     "point_R": -0.0972,
+     "point_R": -0.1208,
      "ci95_R": [
-      -0.1536,
-      -0.0386
+      -0.1781,
+      -0.0657
      ],
      "significant": true,
      "direction": "continuation",
@@ -47,8 +47,8 @@
     }
    },
    "sensitivities_event_mean_R": {
-    "optimistic": 0.01483679525222552,
-    "touch_close": -0.020771513353115726
+    "optimistic": -0.014671941971645236,
+    "touch_close": -0.04863171777118365
    },
    "horizon_profile_signed_fwdR": {
     "30": {
@@ -109,13 +109,13 @@
      "barrier_contrast": {
       "n": 1581,
       "sessions": 1581,
-      "point_R": 0.1992,
+      "point_R": -0.1009,
       "ci95_R": [
-       0.1369,
-       0.259
+       -0.1907,
+       -0.0104
       ],
       "significant": true,
-      "direction": "reversal",
+      "direction": "continuation",
       "sign_convention": "rev-cont barrier contrast: + = reversal, - = continuation",
       "sig_seed_share_25": 1.0
      },
@@ -136,10 +136,10 @@
      "barrier_contrast": {
       "n": 1452,
       "sessions": 1452,
-      "point_R": -0.0499,
+      "point_R": 0.062,
       "ci95_R": [
-       -0.1126,
-       0.0169
+       -0.0355,
+       0.157
       ],
       "significant": false,
       "direction": "ns",
@@ -166,9 +166,9 @@
     "market": "GC",
     "n": 2468,
     "sessions": 2370,
-    "point_R": -0.08776371308016878,
-    "ci_low_R": -0.12257383966244725,
-    "ci_high_R": -0.053164556962025315,
+    "point_R": -0.09578059071729958,
+    "ci_low_R": -0.16487341772151898,
+    "ci_high_R": -0.03280590717299578,
     "theta_R": 0.2,
     "confirmatory": "NULL",
     "screening": "significant_not_tradable",
@@ -180,10 +180,10 @@
     "optimistic": {
      "n": 2468,
      "sessions": 2370,
-     "point_R": -0.1822,
+     "point_R": -0.1322,
      "ci95_R": [
-      -0.2381,
-      -0.1329
+      -0.1989,
+      -0.0632
      ],
      "significant": true,
      "direction": "continuation",
@@ -192,10 +192,10 @@
     "touch_close": {
      "n": 2468,
      "sessions": 2370,
-     "point_R": -0.1505,
+     "point_R": -0.0919,
      "ci95_R": [
-      -0.1919,
-      -0.1096
+      -0.1494,
+      -0.0416
      ],
      "significant": true,
      "direction": "continuation",
@@ -203,8 +203,8 @@
     }
    },
    "sensitivities_event_mean_R": {
-    "optimistic": -0.14485413290113452,
-    "touch_close": -0.1310777957860616
+    "optimistic": -0.09076175040518639,
+    "touch_close": -0.06482982171799027
    },
    "horizon_profile_signed_fwdR": {
     "30": {
@@ -267,13 +267,13 @@
       "sessions": 1263,
       "point_R": -0.061,
       "ci95_R": [
-       -0.1128,
-       -0.0119
+       -0.1461,
+       0.0273
       ],
-      "significant": true,
-      "direction": "continuation",
+      "significant": false,
+      "direction": "ns",
       "sign_convention": "rev-cont barrier contrast: + = reversal, - = continuation",
-      "sig_seed_share_25": 1.0
+      "sig_seed_share_25": 0.0
      },
      "fwd_R_120m": {
       "n": 1263,
@@ -292,15 +292,15 @@
      "barrier_contrast": {
       "n": 1205,
       "sessions": 1205,
-      "point_R": -0.1,
+      "point_R": -0.0535,
       "ci95_R": [
-       -0.154,
-       -0.0469
+       -0.1473,
+       0.0407
       ],
-      "significant": true,
-      "direction": "continuation",
+      "significant": false,
+      "direction": "ns",
       "sign_convention": "rev-cont barrier contrast: + = reversal, - = continuation",
-      "sig_seed_share_25": 1.0
+      "sig_seed_share_25": 0.0
      },
      "fwd_R_120m": {
       "n": 1205,
@@ -319,11 +319,11 @@
   }
  },
  "per_market_points_R": {
-  "NQ": 0.053599221789883265,
-  "GC": -0.08776371308016878
+  "NQ": -0.18463035019455254,
+  "GC": -0.09578059071729958
  },
  "pooled_descriptive": {
-  "point_R": -0.017082245645142758,
+  "point_R": -0.14020547045592607,
   "label": "descriptive_only_never_a_verdict"
  }
 }

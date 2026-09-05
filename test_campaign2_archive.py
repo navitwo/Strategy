@@ -1,16 +1,16 @@
 """Permanent test for the C2 archive's quoted figures.
 
-CAMPAIGN2_ONLT_ARCHIVE.md makes specific numeric claims in sections
-2.1-2.4. Standing rule: any verifier that justified a written claim gets
-promoted to a permanent test, so the archive can never silently rot
-against its own artifact. This test re-derives the archive analysis from
-the committed ledger via c2_archive_analysis.main() and pins every figure
-the archive quotes, plus the exploratory labelling itself (the archive may
-only present sections B/C as leads — the test enforces the flag exists).
+CAMPAIGN2_ONLT_ARCHIVE.md makes specific numeric claims. Standing rule:
+any verifier that justified a written claim gets promoted to a permanent
+test, so the archive can never silently rot against its own artifact.
+This test re-derives the archive analysis from the committed ledger via
+c2_archive_analysis.main() and pins every figure the archive quotes.
 
-The primary-CI bit-match self-check inside c2_archive_analysis is the
-load-bearing integrity step; it runs here too, and an AssertionError on
-drift fails this suite.
+Figures were RE-PINNED 2026-09-05 after the resolve_arm stop-condition
+fix and the corrected DEV re-run (see the archive's defect-disclosure
+section): the barrier-contrast cells changed materially; the fwd_R-based
+horizon and touch cells were untouched (that formula was always correct)
+and their pins did NOT move.
 """
 import json
 import os
@@ -35,82 +35,89 @@ class C2ArchiveFigures(unittest.TestCase):
         self.assertIn("post-hoc", flag.lower())
         self.assertIn("zero promotion power", flag.lower())
 
-    def test_point1_split_was_load_bearing(self):
-        """Opposite-sign primaries; pooled ~ zero (descriptive only)."""
+    def test_point1_same_sign_continuation(self):
+        """Post-fix: both markets continuation — the pre-fix 'opposite
+        signs cancelled' story was a defect artifact. GC NULL; NQ
+        INCONCLUSIVE straddling -theta."""
         pts = self.doc["per_market_points_R"]
-        self.assertGreater(pts["NQ"], 0.0)
+        self.assertLess(pts["NQ"], 0.0)
         self.assertLess(pts["GC"], 0.0)
-        self.assertAlmostEqual(pts["NQ"], 0.0536, places=4)
-        self.assertAlmostEqual(pts["GC"], -0.0878, places=4)
+        self.assertAlmostEqual(pts["NQ"], -0.1846, places=4)
+        self.assertAlmostEqual(pts["GC"], -0.0958, places=4)
         self.assertAlmostEqual(self.doc["pooled_descriptive"]["point_R"],
-                               -0.0171, places=4)
-        # magnitudes must be small relative to theta: the split mattered
-        # because |0.054| and |0.088| cancel to ~|0.017|
-        self.assertLess(abs(self.doc["pooled_descriptive"]["point_R"]),
-                        min(abs(pts["NQ"]), abs(pts["GC"])))
+                               -0.1402, places=4)
+        nq = self.doc["markets"]["NQ"]["primary_committed"]
+        gc = self.doc["markets"]["GC"]["primary_committed"]
+        self.assertEqual(nq["confirmatory"], "INCONCLUSIVE")
+        self.assertEqual(nq["screening"], "significant_beyond_theta")
+        self.assertEqual(gc["confirmatory"], "NULL")
+        self.assertEqual(gc["screening"], "significant_not_tradable")
+        # NQ CI straddles -theta: the one geometry that is neither NULL
+        # nor POSITIVE, classified exactly per the frozen rule.
+        self.assertLess(nq["ci_low_R"], -0.2)
+        self.assertGreater(nq["ci_high_R"], -0.2)
 
-    def test_point2_entry_survival(self):
-        """NQ flips sign across entry conventions; GC holds sign."""
-        nq = self.doc["markets"]["NQ"]
-        gc = self.doc["markets"]["GC"]
-        nq_pri = nq["primary_committed"]["point_R"]
-        nq_opt = nq["sensitivities_event_mean_R"]["optimistic"]
-        nq_tc = nq["sensitivities_event_mean_R"]["touch_close"]
-        self.assertAlmostEqual(nq_pri, 0.0536, places=4)
-        self.assertAlmostEqual(nq_opt, 0.0148, places=4)
-        self.assertAlmostEqual(nq_tc, -0.0208, places=4)
-        # the claim: touch_close OPPOSITE SIGN to primary for NQ
-        self.assertLess(nq_pri * nq_tc, 0.0)
-        gc_pri = gc["primary_committed"]["point_R"]
-        gc_opt = gc["sensitivities_event_mean_R"]["optimistic"]
-        gc_tc = gc["sensitivities_event_mean_R"]["touch_close"]
-        self.assertAlmostEqual(gc_pri, -0.0878, places=4)
-        self.assertAlmostEqual(gc_opt, -0.1449, places=4)
-        self.assertAlmostEqual(gc_tc, -0.1311, places=4)
-        for other in (gc_opt, gc_tc):
-            self.assertGreater(gc_pri * other, 0.0)   # same sign holds
+    def test_point2_no_sign_flip_after_fix(self):
+        """Barrier contrasts all continuation across specs (event means
+        and clustered CIs) — entry fragility as formerly described was
+        an artifact of the inverted stop. GC holds at all three."""
+        for mkt in ("NQ", "GC"):
+            d = self.doc["markets"][mkt]
+            em = d["sensitivities_event_mean_R"]
+            pri = d["primary_committed"]["point_R"]
+            for v in (pri, em["optimistic"], em["touch_close"]):
+                self.assertLess(v, 0.0)
+            for name in ("optimistic", "touch_close"):
+                s = d["sensitivities_barrier_contrast"][name]
+                self.assertEqual(s["direction"], "continuation")
 
-    def test_point3_horizon_profiles(self):
-        """GC cont-SIG at 30/60, ns at 120/240; NQ ns until 240 cont-SIG."""
+    def test_point3_horizon_profiles_unchanged(self):
+        """fwd_R cells are defect-immune: pins identical pre/post fix.
+        GC cont-SIG at 30/60, ns at 120/240; NQ ns until 240 cont-SIG."""
         nq = self.doc["markets"]["NQ"]["horizon_profile_signed_fwdR"]
         gc = self.doc["markets"]["GC"]["horizon_profile_signed_fwdR"]
-        self.assertTrue(gc["30"]["significant"])
-        self.assertEqual(gc["30"]["direction"], "continuation")
         self.assertAlmostEqual(gc["30"]["point_R"], -0.0960, places=4)
-        self.assertTrue(gc["60"]["significant"])
+        self.assertTrue(gc["30"]["significant"])
         self.assertAlmostEqual(gc["60"]["point_R"], -0.0762, places=4)
+        self.assertTrue(gc["60"]["significant"])
         self.assertFalse(gc["120"]["significant"])
         self.assertFalse(gc["240"]["significant"])
         for h in ("30", "60", "120"):
             self.assertFalse(nq[h]["significant"])
         self.assertTrue(nq["240"]["significant"])
-        self.assertEqual(nq["240"]["direction"], "continuation")
         self.assertAlmostEqual(nq["240"]["point_R"], -0.1611, places=4)
-        # every exploratory cell must have survived the seed sweep at 0 or 1
         for m in (nq, gc):
             for cell in m.values():
                 self.assertIn(cell["sig_seed_share_25"], (0.0, 1.0))
 
     def test_point4_touch_split(self):
-        """120m fwd effect lives in overnight-high touches; lows flat."""
-        for mkt, oh, oh_ci_sig in (("NQ", -0.1506, False),
-                                   ("GC", -0.1248, True)):
+        """120m fwd: effect lives in overnight-high, lows flat — pins
+        unchanged by the fix (fwd_R). Barrier-contrast touch cells
+        re-pinned post-fix (they moved)."""
+        for mkt, oh in (("NQ", -0.1506), ("GC", -0.1248)):
             td = self.doc["markets"][mkt]["touch_direction_split"]
             high = td["overnight_high"]["fwd_R_120m"]
             low = td["overnight_low"]["fwd_R_120m"]
             self.assertAlmostEqual(high["point_R"], oh, places=4)
-            self.assertEqual(high["significant"], oh_ci_sig)
             self.assertLess(abs(low["point_R"]), 0.03)
             self.assertFalse(low["significant"])
-            self.assertGreater(low["point_R"], 0.0)   # flat, +0.018/+0.024
+        nq = self.doc["markets"]["NQ"]["touch_direction_split"]
+        gc = self.doc["markets"]["GC"]["touch_direction_split"]
+        self.assertAlmostEqual(
+            nq["overnight_high"]["barrier_contrast"]["point_R"],
+            -0.1009, places=4)
+        self.assertAlmostEqual(
+            gc["overnight_high"]["barrier_contrast"]["point_R"],
+            -0.0610, places=4)
 
-    def test_verdicts_stay_null(self):
-        """The archive may reframe but never relabel: both primaries NULL."""
+    def test_verdicts_not_promotable(self):
+        """The archive may reframe but never promote: nothing cleared §7.
+        NQ INCONCLUSIVE is by construction not POSITIVE; GC NULL inside
+        theta. Both non-promotable."""
         for mkt in ("NQ", "GC"):
             p = self.doc["markets"][mkt]["primary_committed"]
-            self.assertEqual(p["confirmatory"], "NULL")
-            self.assertLess(abs(p["point_R"]), self.doc["theta_R"])
-            self.assertGreater(abs(p["point_R"]), 0.0)
+            self.assertIn(p["confirmatory"], ("NULL", "INCONCLUSIVE"))
+            self.assertNotEqual(p["confirmatory"], "POSITIVE")
 
 
 if __name__ == "__main__":

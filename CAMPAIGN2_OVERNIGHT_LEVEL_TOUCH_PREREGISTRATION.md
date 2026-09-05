@@ -1,13 +1,18 @@
 # Campaign 2 — Overnight-Level Bare-Touch Event Study
 
 **Status:** FROZEN PRE-REGISTRATION — rules immutable. **DEV pass EXECUTED
-2026-09-04** (local pipeline, guard-verified, dev window only; results in
-`c2_local_study.json`, integrity tests in `test_campaign2_ledger.py`).
-**ARCHIVED 2026-09-04** on DEV evidence: both primaries NULL, screening
-significant_not_tradable both, no promotion trigger; filed as the
-hypothesis generator for Campaign 3 — see `CAMPAIGN2_ONLT_ARCHIVE.md`
-(figure tests in `test_campaign2_archive.py`). Validation/holdout were
-never opened and remain LOCKED. NO strategy backtest, NO optimization.
+2026-09-04**, CORRECTED RE-EXECUTION 2026-09-05 after an inverted
+stop-condition defect was found and fixed (§8 disclosure + §8a corrected
+replay; permanent regression `test_resolve_arm_semantics.py`). Local
+pipeline guard-verified, dev window only; results in
+`c2_local_study.json`, integrity tests in `test_campaign2_ledger.py`.
+**ARCHIVED 2026-09-05** on the corrected evidence: GC primary NULL, NQ
+primary INCONCLUSIVE (CI straddles −θ), no promotion trigger; the
+gold-residue stop-widening feasibility probe (rule pre-committed at
+`fb6fe63`) returned **DEAD** — see `CAMPAIGN2_ONLT_ARCHIVE.md` §4-5
+(figure tests in `test_campaign2_archive.py`, probe in
+`c2_residue_stopwiden.py`). Validation/holdout were never opened and
+remain LOCKED. NO strategy backtest, NO optimization.
 **Protocol:** `C2-ONLT-v1`
 **Frozen:** 2026-09-01  
 **Validation/holdout:** LOCKED
@@ -343,7 +348,16 @@ estimator, and clustering rule are unchanged.
 - No rescue/strategy phase unless at least one primary verdict (A or B) is robust, economically meaningful, and ambiguity-stable within its own market; a rescue phase may never be argued from the pooled descriptive replication.
 - A NQ null is expected and does not invalidate a separately reported GC result; neither leg may be silently dropped.
 
-## 8. Post-data replay record (DEV pass, executed 2026-09-04)
+## 8. Post-data replay record (DEV pass, executed 2026-09-04; SUPERSEDED — see 8a)
+
+**DEFECT DISCLOSURE (2026-09-05):** the pass recorded below was computed
+with an inverted stop condition in the local resolver (the -0.5R adverse
+test could never fire on real adverse moves; see §8a and
+`test_resolve_arm_semantics.py`). The barrier-payoff figures below were
+wrong; validation/holdout were never touched, and no decision was made
+outside DEV on the defective numbers. §8a is the record of the corrected
+re-execution on the frozen protocol. The original text is retained
+unaltered as the audit trail of what was reported when.
 
 Artifact of record: `c2_local_study.json` (git-tracked; ledger integrity
 tests `test_campaign2_ledger.py`). Frozen gate re-evaluated at ACHIEVED
@@ -375,3 +389,57 @@ numbers, not re-guessed:
   and validation/holdout stay locked. The screening statistics record
   that small real effects exist in opposite directions per market —
   descriptive honesty only, zero promotion power by construction.
+
+## 8a. Corrected re-execution of the DEV pass (2026-09-05, same frozen protocol)
+
+Root cause (found by the C2-RESIDUE-STOPWIDEN soundness gate, NOT by any
+verdict-facing change — the protocol, θ, cell, seed, estimator, population,
+and every gate were untouched; only the local resolver's payoff code was
+wrong): `c2_local_study.resolve_arm` recorded adverse POSITIVE for real
+adverse moves while testing `adv <= -s_R`. Consequences, all confirmed
+against synthetic paths pinned permanently by
+`test_resolve_arm_semantics.py` (8 tests, RED pre-fix, GREEN post-fix):
+
+1. the frozen 0.5R stop could not fire on genuine adverse moves;
+2. a stop was "hit" when price ran 0.5R+ entirely to the PROFIT side;
+3. the stored `mfe_R/mae_R` transport carried the same inversion on the
+   adverse leg (Campaign 1's hosted resolver records adverse NEGATIVE —
+   `scifvg_main.py:481`, `random_time_control.py:1326; the C2 local port
+   diverged from it).
+
+Event population, funnel, bars/rolls, `fwd_R` (its close-price formula was
+always correct) and `mfe_R` are IDENTICAL pre/post fix — verified by field-
+wise diff of the two artifacts. Every barrier payoff (`reversal_R`,
+`continuation_R`, `contrast_R`, both sensitivity contrasts, `mae_R`)
+changed and was re-derived.
+
+Corrected headline numbers (clustered bootstrap, θ=0.2R, same seeds):
+
+| market | point | CI95 | confirmatory | screening |
+|---|---|---|---|---|
+| NQ (Primary A) | **−0.1846R** | [−0.2494, −0.1194] | **INCONCLUSIVE** (CI straddles −θ) | significant_beyond_theta |
+| GC (Primary B) | **−0.0958R** | [−0.1649, −0.0328] | **NULL** | significant_not_tradable |
+
+Realized contrast sd: NQ 1.8703R / GC 1.6145R vs anchored central 1.6015R
+— both below the 1.5x stand-down ceiling (2.402R) so the gates pass (the
+ledger test re-derives stand-down from gate arithmetic), though NQ's
+realized dispersion now sits 17% ABOVE the central anchor where the
+defective pass had it below: the corrected stop semantics produce a
+fatter, two-sided payoff table (more genuine -0.5R stop-outs alongside
+the +2.0R targets). Note the point-estimator gap
+disclosed honestly: cluster-mean −0.1846 vs event-weighted −0.0229 for NQ
+(463 of 2,570 sessions carry a second event); the frozen protocol selects
+the cluster estimator, and the archive's exploratory rows use the event
+mean — the two differ materially for NQ and neither label changes.
+
+Post-fix directions agree across both markets (continuation at the barrier
+cell); the pre-fix "opposite-signs" reading was a defect artifact, not a
+finding. Consequence under §7: GC is NULL exactly as before (unchanged
+verdict); NQ's INCONCLUSIVE confirms nothing — POSITIVE requires the whole
+CI beyond θ, and a straddled CI is by construction neither robust nor
+ambiguity-stable (sensitivity event-means −0.0147 optimistic / −0.0486
+touch-close are again sub-θ, and the optimistic reading cuts toward zero).
+NO promotion trigger exists; no random-time-control phase opens;
+validation and holdout remain LOCKED AND UNREAD. The archive is rewritten
+on this corrected record; the stop-widening probe re-ran on it and its
+frozen-rule verdict is recorded in CAMPAIGN2_ONLT_ARCHIVE.md §4-5.

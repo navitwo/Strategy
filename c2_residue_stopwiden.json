@@ -1,0 +1,622 @@
+{
+ "protocol_doc": "C2_RESIDUE_STOPWIDEN_PROTOCOL.md",
+ "status": "EXPLORATORY-ONLY upper-bound probe; zero promotion power",
+ "friction_R_base": 0.2,
+ "stops_R": [
+  0.5,
+  1.0,
+  1.5,
+  2.0
+ ],
+ "note": "1R = 1 ATR; contrasts in ATR points; lo = bound most favourable to continuation-hypothesis; hi = bound most adverse (conservative); exact truth inside [lo, hi]",
+ "markets": {
+  "GC": {
+   "overnight_high_n": 1263,
+   "stored_exact_contrast_mean_R": -0.061,
+   "bracket_contains_stored_exact_at_c2_grid": true,
+   "family_A_target_2R_fixed": {
+    "0.5": {
+     "n": 1263,
+     "stop_R": 0.5,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.2439,
+      "ci95_R": [
+       -0.3353,
+       -0.1453
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.1223,
+      "ci95_R": [
+       0.0309,
+       0.2162
+      ]
+     },
+     "degenerate_ordering_free_share": 0.8694,
+     "scales_lo": {
+      "per_R": -0.4878,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": 0.2446,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.4
+    },
+    "1.0": {
+     "n": 1263,
+     "stop_R": 1.0,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.1869,
+      "ci95_R": [
+       -0.3048,
+       -0.0721
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.0721,
+      "ci95_R": [
+       -0.0451,
+       0.19
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9295,
+     "scales_lo": {
+      "per_R": -0.1869,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": 0.0721,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.2
+    },
+    "1.5": {
+     "n": 1263,
+     "stop_R": 1.5,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.1683,
+      "ci95_R": [
+       -0.3104,
+       -0.0281
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.0008,
+      "ci95_R": [
+       -0.1441,
+       0.1354
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9675,
+     "scales_lo": {
+      "per_R": -0.1122,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": 0.0005,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.1333
+    },
+    "2.0": {
+     "n": 1263,
+     "stop_R": 2.0,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.1869,
+      "ci95_R": [
+       -0.3389,
+       -0.0317
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": -0.0602,
+      "ci95_R": [
+       -0.2154,
+       0.1013
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9842,
+     "scales_lo": {
+      "per_R": -0.0935,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": -0.0301,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.1
+    }
+   },
+   "family_B_target_2x_stop": {
+    "0.5": {
+     "n": 1263,
+     "stop_R": 0.5,
+     "target_R": 1.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.3341,
+      "ci95_R": [
+       -0.4046,
+       -0.2601
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.3369,
+      "ci95_R": [
+       0.2668,
+       0.4089
+      ]
+     },
+     "degenerate_ordering_free_share": 0.6793,
+     "scales_lo": {
+      "per_R": -0.6682,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": true
+     },
+     "scales_hi": {
+      "per_R": 0.6738,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.4
+    },
+    "1.0": {
+     "n": 1263,
+     "stop_R": 1.0,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.1869,
+      "ci95_R": [
+       -0.3032,
+       -0.0728
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.0721,
+      "ci95_R": [
+       -0.0491,
+       0.1924
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9295,
+     "scales_lo": {
+      "per_R": -0.1869,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": 0.0721,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.2
+    },
+    "1.5": {
+     "n": 1263,
+     "stop_R": 1.5,
+     "target_R": 3.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.171,
+      "ci95_R": [
+       -0.3064,
+       -0.0368
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": -0.0891,
+      "ci95_R": [
+       -0.2221,
+       0.0416
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9834,
+     "scales_lo": {
+      "per_R": -0.114,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": -0.0594,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.1333
+    },
+    "2.0": {
+     "n": 1263,
+     "stop_R": 2.0,
+     "target_R": 4.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.1884,
+      "ci95_R": [
+       -0.323,
+       -0.0538
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": -0.1504,
+      "ci95_R": [
+       -0.285,
+       -0.0127
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9937,
+     "scales_lo": {
+      "per_R": -0.0942,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": -0.0752,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.1
+    }
+   },
+   "time_exit_contrast_by_horizon": {
+    "30": {
+     "n": 1263,
+     "contrast_R": -0.2799,
+     "ci95_R": [
+      -0.4463,
+      -0.1079
+     ],
+     "exact_no_ordering_blindness": true,
+     "clears_friction_point": true,
+     "clears_friction_CI_wholly": false
+    },
+    "60": {
+     "n": 1263,
+     "contrast_R": -0.2681,
+     "ci95_R": [
+      -0.4707,
+      -0.07
+     ],
+     "exact_no_ordering_blindness": true,
+     "clears_friction_point": true,
+     "clears_friction_CI_wholly": false
+    },
+    "120": {
+     "n": 1263,
+     "contrast_R": -0.2496,
+     "ci95_R": [
+      -0.4855,
+      -0.0129
+     ],
+     "exact_no_ordering_blindness": true,
+     "clears_friction_point": true,
+     "clears_friction_CI_wholly": false
+    },
+    "240": {
+     "n": 1263,
+     "contrast_R": -0.2889,
+     "ci95_R": [
+      -0.5543,
+      -0.0263
+     ],
+     "exact_no_ordering_blindness": true,
+     "clears_friction_point": true,
+     "clears_friction_CI_wholly": false
+    }
+   }
+  },
+  "NQ": {
+   "overnight_high_n": 1581,
+   "stored_exact_contrast_mean_R": -0.1009,
+   "bracket_contains_stored_exact_at_c2_grid": true,
+   "family_A_target_2R_fixed": {
+    "0.5": {
+     "n": 1581,
+     "stop_R": 0.5,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.6037,
+      "ci95_R": [
+       -0.6989,
+       -0.5107
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.4842,
+      "ci95_R": [
+       0.3843,
+       0.586
+      ]
+     },
+     "degenerate_ordering_free_share": 0.6445,
+     "scales_lo": {
+      "per_R": -1.2074,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": true
+     },
+     "scales_hi": {
+      "per_R": 0.9684,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.4
+    },
+    "1.0": {
+     "n": 1581,
+     "stop_R": 1.0,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.5136,
+      "ci95_R": [
+       -0.6388,
+       -0.3934
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.4257,
+      "ci95_R": [
+       0.2992,
+       0.5497
+      ]
+     },
+     "degenerate_ordering_free_share": 0.7666,
+     "scales_lo": {
+      "per_R": -0.5136,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": true
+     },
+     "scales_hi": {
+      "per_R": 0.4257,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.2
+    },
+    "1.5": {
+     "n": 1581,
+     "stop_R": 1.5,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.4194,
+      "ci95_R": [
+       -0.5655,
+       -0.265
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.3643,
+      "ci95_R": [
+       0.2169,
+       0.5136
+      ]
+     },
+     "degenerate_ordering_free_share": 0.8558,
+     "scales_lo": {
+      "per_R": -0.2796,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": true
+     },
+     "scales_hi": {
+      "per_R": 0.2429,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.1333
+    },
+    "2.0": {
+     "n": 1581,
+     "stop_R": 2.0,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.3213,
+      "ci95_R": [
+       -0.4934,
+       -0.1442
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.3163,
+      "ci95_R": [
+       0.1392,
+       0.4934
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9203,
+     "scales_lo": {
+      "per_R": -0.1606,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": 0.1582,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.1
+    }
+   },
+   "family_B_target_2x_stop": {
+    "0.5": {
+     "n": 1581,
+     "stop_R": 0.5,
+     "target_R": 1.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.6275,
+      "ci95_R": [
+       -0.6898,
+       -0.5667
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.5073,
+      "ci95_R": [
+       0.4437,
+       0.5718
+      ]
+     },
+     "degenerate_ordering_free_share": 0.5319,
+     "scales_lo": {
+      "per_R": -1.255,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": true
+     },
+     "scales_hi": {
+      "per_R": 1.0146,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.4
+    },
+    "1.0": {
+     "n": 1581,
+     "stop_R": 1.0,
+     "target_R": 2.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.5136,
+      "ci95_R": [
+       -0.6407,
+       -0.3922
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.4257,
+      "ci95_R": [
+       0.3004,
+       0.5528
+      ]
+     },
+     "degenerate_ordering_free_share": 0.7666,
+     "scales_lo": {
+      "per_R": -0.5136,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": true
+     },
+     "scales_hi": {
+      "per_R": 0.4257,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.2
+    },
+    "1.5": {
+     "n": 1581,
+     "stop_R": 1.5,
+     "target_R": 3.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.2713,
+      "ci95_R": [
+       -0.4345,
+       -0.112
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.2154,
+      "ci95_R": [
+       0.0474,
+       0.3814
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9096,
+     "scales_lo": {
+      "per_R": -0.1809,
+      "clears_friction_point": true,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": 0.1436,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.1333
+    },
+    "2.0": {
+     "n": 1581,
+     "stop_R": 2.0,
+     "target_R": 4.0,
+     "lo_optimistic_for_continuation": {
+      "point_R": -0.0266,
+      "ci95_R": [
+       -0.21,
+       0.1695
+      ]
+     },
+     "hi_conservative_for_continuation": {
+      "point_R": 0.2049,
+      "ci95_R": [
+       0.0177,
+       0.3884
+      ]
+     },
+     "degenerate_ordering_free_share": 0.9658,
+     "scales_lo": {
+      "per_R": -0.0133,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "scales_hi": {
+      "per_R": 0.1024,
+      "clears_friction_point": false,
+      "clears_friction_CI_wholly": false
+     },
+     "friction_fraction_of_stop": 0.1
+    }
+   },
+   "time_exit_contrast_by_horizon": {
+    "30": {
+     "n": 1581,
+     "contrast_R": -0.2113,
+     "ci95_R": [
+      -0.4433,
+      0.0206
+     ],
+     "exact_no_ordering_blindness": true,
+     "clears_friction_point": true,
+     "clears_friction_CI_wholly": false
+    },
+    "60": {
+     "n": 1581,
+     "contrast_R": -0.1364,
+     "ci95_R": [
+      -0.4244,
+      0.1496
+     ],
+     "exact_no_ordering_blindness": true,
+     "clears_friction_point": false,
+     "clears_friction_CI_wholly": false
+    },
+    "120": {
+     "n": 1581,
+     "contrast_R": -0.3012,
+     "ci95_R": [
+      -0.6351,
+      0.042
+     ],
+     "exact_no_ordering_blindness": true,
+     "clears_friction_point": true,
+     "clears_friction_CI_wholly": false
+    },
+    "240": {
+     "n": 1581,
+     "contrast_R": -0.497,
+     "ci95_R": [
+      -0.8836,
+      -0.0976
+     ],
+     "exact_no_ordering_blindness": true,
+     "clears_friction_point": true,
+     "clears_friction_CI_wholly": false
+    }
+   }
+  }
+ },
+ "verdict_GC_overnight_high_familyA": "DEAD",
+ "verdict_rule_note": "frozen in C2_RESIDUE_STOPWIDEN_PROTOCOL.md BEFORE results existed; conservative reading wins"
+}

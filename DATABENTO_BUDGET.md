@@ -46,6 +46,14 @@ $125.00 − $124.68 = **$0.32** gap. No unexplained spend remains.
 |---|---|---|---|---|
 | 2026-08-09 | XNAS sample jobs ×3 (trades/ohlcv-1m/mbo MSFT) | — | $0.32 | $124.68 (portal-verified 2026-09-04) |
 | 2026-09-04 | C2 purchase: GLBX.MDP3 ohlcv-1m + definition, NQ.n.0+GC.n.0 continuous, 2010-06-07→2026-09-04 (d48, ceiling $45) | **$38.04** (re-quoted immediately pre-submit) | ohlcv-1m **$38.031821** + definition **$0.008394** (job fields; sum $38.0402 = quote exactly) | **≈ $86.64** |
+| 2026-09-04 | C3 replication-venue quote SI.n.0/PL.n.0/HG.n.0 (metadata.get_cost, free) | $52.2116 (per-symbol 18.7710/14.8620/18.5787; joint = sum) | **$0.00 — DECLINED by decision, not purchased** | **≈ $86.64 unchanged** |
+
+**Reservation (user decision 2026-09-04):** the SI/PL/HG broad-metals
+venue was ruled out; the remaining inferred ≈$86.64 stays **reserved for
+a possible index-complex pull (ES/YM/RTY)** if a later hypothesis
+warrants it. Credits expire **2027-02-09 regardless of balance** — an
+unused reservation dies with them; re-verify the portal before any
+purchase either way (rule 1).
 
 *Quotes vs actuals: Databento bills the confirmed job cost, which for
 batch bulk jobs matches the pre-quote at the same range. If post-purchase
