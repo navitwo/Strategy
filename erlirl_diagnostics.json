@@ -1,0 +1,42 @@
+{
+ "NQ": {
+  "events": 3033,
+  "rung2_candidates": 2108,
+  "jump_excess_gt_0.0atr": 0,
+  "jump_excess_gt_0.25atr": 0,
+  "jump_excess_gt_0.5atr": 0,
+  "jump_excess_gt_1.0atr": 0,
+  "standard_3bar_fvg_within6": {
+   "fwd": 847,
+   "any": 2108
+  },
+  "median_touch_range_points": 42.25,
+  "median_atr_points": 14.285714285714286,
+  "rung2_saturation": {
+   "n": 2108,
+   "share_plus_bound": 0.6024667931688804,
+   "share_minus_bound": 0.021347248576850095,
+   "share_zero": 0.29886148007590135
+  }
+ },
+ "GC": {
+  "events": 2468,
+  "rung2_candidates": 1719,
+  "jump_excess_gt_0.0atr": 0,
+  "jump_excess_gt_0.25atr": 0,
+  "jump_excess_gt_0.5atr": 0,
+  "jump_excess_gt_1.0atr": 0,
+  "standard_3bar_fvg_within6": {
+   "fwd": 577,
+   "any": 1719
+  },
+  "median_touch_range_points": 6.400000000000091,
+  "median_atr_points": 3.14642857142856,
+  "rung2_saturation": {
+   "n": 1719,
+   "share_plus_bound": 0.3682373472949389,
+   "share_minus_bound": 0.015125072716695753,
+   "share_zero": 0.25072716695753344
+  }
+ }
+}

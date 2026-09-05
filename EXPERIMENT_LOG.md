@@ -886,3 +886,38 @@ after matched side and empirical slots change the dispersion.
   no prereg drafted; theta=0.2R unchanged; friction caveat stated in the
   record (~0.5R at the strategy's own 2-point stops; seconds-scale
   backtests least reliable where queue position dominates).
+
+
+## 2026-09-05 — ERL->IRL gate-ablation ladder: FLIP line preserved, governing reading CLOSED
+
+- Directive: no full system, no C3 prereg; run the gate-ablation study
+  Campaign 1 should have run, on owned data, $0 spend; record both the
+  friction-favorable case (NQ 30m ATR 14.2857 -> 0.035-0.140R) and the
+  prior-against case (C2 sweep -0.1846R continuation; C1 gates
+  17.4% vs random 34.9%). Pre-commit kill rule; permanent look-ahead
+  guard shipped BEFORE the ladder.
+- Protocol ERLIRL_ABLATION_PROTOCOL.md frozen first (41d88c6 +
+  ea7e0b5 pre-results void-edge fix). 14-test look-ahead guard
+  (test_erlirl_ablation_lookahead.py) green pre-run.
+- Run: both soundness gates pass (replay set-exact 3033/2468; rung-1
+  byte-exact vs committed contrast_R and tc means -0.048632/-0.064830).
+  First pass exposed an event_et pairing bug in the new script (two
+  level_kinds can share one bar stamp), fixed pre-statistics.
+- Frozen ladder: rung2 NQ +1.4053 CI[+1.3408,+1.4595] n=2108; GC
+  +0.9793 n=1719; rung3 n=0 BOTH markets; rungs4-5 no sample.
+  Mechanical S6 line: FLIP on rung2.
+- Diagnostics (post-run, inputs-only): rung2 continuation arm stops
+  fire 96.3% NQ / 92.3% GC (entry-at-level AFTER displacement close
+  puts the cont stop inside the conditioned move); 60.2%/36.8% of
+  contrasts pinned at the +2.5 winsor bound -> flip is selection-
+  arithmetic, not evidence. Frozen void definition (whole-bar jump
+  past a 2.96xATR median touch bar) never fires - design error, n=0.
+  Standard C1 3-bar FVG exists in 40.2%/33.6% of survivors but
+  swapping post-hoc = forbidden parameter selection.
+- Disposition: ERL->IRL CLOSED (the hypothesis IS the chain; the
+  chain's sample is empty; the one flipped rung is diagnosed
+  mechanical). No prereg drafted. Transferable lesson: ablation rungs
+  must stamp displacement and enter at the displacement CLOSE with
+  symmetric risk, or the frame guarantees the flip. Next campaign
+  starts fresh. Validation/holdout sealed; $0 spent; ES/YM/RTY
+  reservation untouched.

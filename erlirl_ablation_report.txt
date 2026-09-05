@@ -1,0 +1,21 @@
+ERL->IRL GATE-ABLATION (exploratory; protocol ERLIRL_ABLATION_PROTOCOL.md frozen first)
+
+== NQ  (bars 147990, sounds gates: replay-exact + rung-1 byte-exact)
+  drop funnel: {'no_disp': 925, 'no_void': 2108, 'no_retrace': 0, 'liq_missing_skip': 0, 'liq_beyond_2r_skip': 0, 'liq_bound_below_2r': 0}
+  rung1: n=3033 sessions=2570 contrast cluster-mean=-0.1846 CI[-0.2445,-0.1121] (event-mean -0.0229; tc -0.0486)
+  rung2: n=2108 sessions=1753 contrast cluster-mean=+1.4053 CI[+1.3408,+1.4595] (event-mean +1.4768; tc +1.0434)
+  rung3: n=0 sessions=0 (too few for CI) event-mean=None
+  rung4: n=0 sessions=0 (too few for CI) event-mean=None
+  rung5-variable: n=0 sessions=0 mean_R=None mean_pts=None CI[None,None]
+  rung5-fixed: n=0 sessions=0 mean_R=None mean_pts=None CI[None,None]
+
+== GC  (bars 171550, sounds gates: replay-exact + rung-1 byte-exact)
+  drop funnel: {'no_disp': 749, 'no_void': 1719, 'no_retrace': 0, 'liq_missing_skip': 0, 'liq_beyond_2r_skip': 0, 'liq_bound_below_2r': 0}
+  rung1: n=2468 sessions=2370 contrast cluster-mean=-0.0958 CI[-0.1677,-0.0347] (event-mean -0.0573; tc -0.0648)
+  rung2: n=1719 sessions=1654 contrast cluster-mean=+0.9793 CI[+0.9238,+1.0369] (event-mean +1.0105; tc +0.6690)
+  rung3: n=0 sessions=0 (too few for CI) event-mean=None
+  rung4: n=0 sessions=0 (too few for CI) event-mean=None
+  rung5-variable: n=0 sessions=0 mean_R=None mean_pts=None CI[None,None]
+  rung5-fixed: n=0 sessions=0 mean_R=None mean_pts=None CI[None,None]
+
+VERDICT (protocol S6, frozen pre-results): FLIP — ['NQ rung2', 'GC rung2']; screening caution S6 applies
