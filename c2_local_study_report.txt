@@ -1,0 +1,101 @@
+decoding NQ dev stream (this is the slow part)...
+decoding GC dev stream (this is the slow part)...
+{
+ "protocol": "C2-ONLT-v1",
+ "pass": "local-dev-only (1)",
+ "seed": "C2-ONLT-v1-local-pass-1",
+ "dev_range": [
+  "2010-06-07",
+  "2024-12-31"
+ ],
+ "funnel": {
+  "NQ": {
+   "bars_30m": 147990,
+   "mixed_slots": 0,
+   "rolls": 59,
+   "events": 3033,
+   "atr_floor_rejects": 38,
+   "touch_candidates": 3071,
+   "retention": 0.9876261803972647,
+   "sessions": 2570
+  },
+  "GC": {
+   "bars_30m": 171550,
+   "mixed_slots": 0,
+   "rolls": 72,
+   "events": 2468,
+   "atr_floor_rejects": 3,
+   "touch_candidates": 2471,
+   "retention": 0.9987859166329421,
+   "sessions": 2370
+  }
+ },
+ "primary_stats": {
+  "NQ": {
+   "n": 3033,
+   "sessions": 2570,
+   "point_cluster_mean_R": 0.053599221789883265,
+   "event_mean_R_descriptive": 0.07995384108143752,
+   "sd_contrast_R": 1.2604263310988177,
+   "ci95_R": [
+    0.005155642023346303,
+    0.09970817120622569
+   ],
+   "sensitivity_optimistic_mean_R": 0.01483679525222552,
+   "sensitivity_touch_close_mean_R": -0.020771513353115726
+  },
+  "GC": {
+   "n": 2468,
+   "sessions": 2370,
+   "point_cluster_mean_R": -0.08776371308016878,
+   "event_mean_R_descriptive": -0.08002431118314425,
+   "sd_contrast_R": 0.9314670182333227,
+   "ci95_R": [
+    -0.12257383966244725,
+    -0.053164556962025315
+   ],
+   "sensitivity_optimistic_mean_R": -0.14485413290113452,
+   "sensitivity_touch_close_mean_R": -0.1310777957860616
+  }
+ },
+ "anchored_central_sd_R": 1.6015,
+ "frozen_gate_n": 800,
+ "stand_down": [],
+ "verdicts": {
+  "primary_a_index": {
+   "market": "NQ",
+   "n": 3033,
+   "sessions": 2570,
+   "point_R": 0.053599221789883265,
+   "ci_low_R": 0.005155642023346303,
+   "ci_high_R": 0.09970817120622569,
+   "theta_R": 0.2,
+   "confirmatory": "NULL",
+   "screening": "significant_not_tradable",
+   "confirmatory_required": "NULL",
+   "operable": true
+  },
+  "primary_b_gold": {
+   "market": "GC",
+   "n": 2468,
+   "sessions": 2370,
+   "point_R": -0.08776371308016878,
+   "ci_low_R": -0.12257383966244725,
+   "ci_high_R": -0.053164556962025315,
+   "theta_R": 0.2,
+   "confirmatory": "NULL",
+   "screening": "significant_not_tradable",
+   "confirmatory_required": "NULL",
+   "operable": true
+  }
+ },
+ "pooled_descriptive": {
+  "point_R": -0.017082245645142758,
+  "label": "descriptive_only_never_a_verdict"
+ },
+ "theta_R": 0.2,
+ "primary_cell": "T2S0.5",
+ "horizon_min": 120
+}
+
+Gate passed: verdicts below are the frozen labels.

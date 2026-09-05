@@ -185,7 +185,7 @@ def backtest_create(project_id, name, parameters=None, compile_id=None):
         payload["parameters"] = parameters
     if compile_id:
         payload["compileId"] = compile_id
-    body = json.dumps(payload["parameters"] or {})
+    body = json.dumps(payload.get("parameters") or {})
     if len(body) > 2000:
         raise RuntimeError(f"parameter payload too large: {len(body)} chars")
     d = request("backtests/create", payload)

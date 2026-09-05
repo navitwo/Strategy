@@ -1,7 +1,10 @@
 # Campaign 2 — Overnight-Level Bare-Touch Event Study
 
-**Status:** FROZEN PRE-REGISTRATION — NO MARKET DATA PULLED, NO BACKTEST, NO OPTIMIZATION  
-**Protocol:** `C2-ONLT-v1`  
+**Status:** FROZEN PRE-REGISTRATION — rules immutable. **DEV pass EXECUTED
+2026-09-04** (local pipeline, guard-verified, dev window only; results in
+`c2_local_study.json`, integrity tests in `test_campaign2_ledger.py`).
+NO strategy backtest, NO optimization; validation/holdout remain LOCKED.
+**Protocol:** `C2-ONLT-v1`
 **Frozen:** 2026-09-01  
 **Validation/holdout:** LOCKED
 
@@ -87,6 +90,44 @@ tests (`test_databento_local_guards.py`):
   generator_v1 gate the methodology anchor; this test BOUNDS the local
   path's equivalence instead of silently assuming it, and any violation
   beyond the measured contract fails with printed evidence.
+- **(c-extension) Cloud reconciliation, NQ and roll windows (2026-09-04,
+  pre-study).** The bundled-data test above covers GC ordinary weekdays
+  only; NQ has NO local Lean bundle coverage, and roll weeks — where
+  Databento's open-interest rule and LEAN's `DataMappingMode.OPEN_INTEREST`
+  are most likely to disagree, and where a disagreement would corrupt the
+  overnight high/low the study consumes — were untested. Fixed with one
+  short data-dump backtest per window on the cloud (`c2_nq_dump_main.py`
+  via `d49_nq_dump_main.py`; zero orders, zero signals, subscription
+  already paid): NQ 2024-11-15..12-05 (ordinary + Thanksgiving/Black
+  Friday early closes, zero rolls), NQ 2024-12-16..12-30 (the Z4→H5 roll
+  AND the Christmas holiday inside one window; ended 12-30 so no bar
+  belongs to the 2025-01-01 validation session), GC 2020-01-15..01-31 +
+  02-01..02-14 (the G0→J0 roll and MLK day; the local bundle has no GC
+  files near that date, so this is the only GC-roll coverage). Bar
+  transport is chart series with declared-count polling — a first
+  attempt proved RuntimeStatistics string values silently truncate at
+  200 chars. MEASURED results (permanent tests
+  `QcCloudReconciliation` in `test_databento_local_guards.py`):
+  same-contract bars are BIT-EXACT across vendors — 673/676 on the NQ
+  holiday week (the three residuals are the characterized first-trade
+  drift), and every GC pre-roll and post-convergence bar matched exactly
+  (max diff 0.00). ROLL TIMING IS A REAL VENDOR DIVERGENCE, asserted as
+  measured, never papered over: NQ — Databento switched Z4→H5 at
+  2024-12-18 19:00 ET, LEAN's event fired 2024-12-19 00:00 ET, the SAME
+  trade session (9 divergent slots, the Z4/H5 spread, everything else
+  bit-exact); GC — Databento rolled 2020-01-23 19:00 ET while LEAN's
+  depth-0 series did not change until 2020-02-06/07, a ~2-week
+  front-month divergence. The consequence for C2 is bounded by design:
+  the study consumes the LOCAL pipeline, and guard (b) fails closed on
+  every roll session the same way regardless of which clock the vendor
+  used — the mixed-slot drop plus `on_rollover` invalidation means an
+  overnight spanning a roll publishes NO levels (asserted end-to-end on
+  the real GC roll window: zero events on session 2020-01-24, and every
+  event elsewhere verified against an independently recomputed
+  single-contract overnight, on a date where the two contracts traded
+  ~65 ticks apart). The hosted path remains the compute authority for
+  any promoted candidate; this extension removes the market-coverage and
+  roll-window gaps in the local path's equivalence proof.
 
 The pipeline is transport, not methodology: no cell, threshold, horizon,
 payoff, or classifier behavior differs between local and hosted paths.
@@ -297,3 +338,36 @@ estimator, and clustering rule are unchanged.
 - No random-time control until the event ledger passes exact reconciliation.
 - No rescue/strategy phase unless at least one primary verdict (A or B) is robust, economically meaningful, and ambiguity-stable within its own market; a rescue phase may never be argued from the pooled descriptive replication.
 - A NQ null is expected and does not invalidate a separately reported GC result; neither leg may be silently dropped.
+
+## 8. Post-data replay record (DEV pass, executed 2026-09-04)
+
+Artifact of record: `c2_local_study.json` (git-tracked; ledger integrity
+tests `test_campaign2_ledger.py`). Frozen gate re-evaluated at ACHIEVED
+numbers, not re-guessed:
+
+| market | achieved n | sessions | realized contrast sd | frozen gate | pass |
+|---|---|---|---|---|---|
+| NQ (Primary A) | 3,033 | 2,570 | 1.2604R | n ≥ 800 (central 1.6015 anchor) | yes |
+| GC (Primary B) | 2,468 | 2,370 | 0.9315R | n ≥ 800 | yes |
+
+- Both realizations sit BELOW the anchored central dispersion (1.6015R):
+  the study is at least as informative as planned; the stand-down
+  conditions (n < 800 or sd materially exceeding the anchor) did not
+  fire. At realized sd the frozen grid replays to minimum_passing_n 800
+  (NQ) / 400 (GC), so the frozen 800 requirement is met with margin by
+  both verdicts.
+- ATR-floor retention published: NQ 38 rejects of 3,071 candidates
+  (98.76%), GC 3 of 2,471 (99.88%) — the floor barely binds on this
+  population.
+- Primary outcomes (T2S0.5 @120m, pessimistic, clustered bootstrap):
+  A = NULL (point +0.054R, CI [+0.005, +0.100]; screening
+  significant_not_tradable vs zero in reversal direction);
+  B = NULL (point −0.088R, CI [−0.123, −0.053]; screening
+  significant_not_tradable vs zero in continuation direction).
+  Declared sensitivities (optimistic ambiguity; touch-bar-close entry)
+  reported in the artifact; neither crosses ±θ; no label changes.
+- Consequence under §7: no promotion trigger exists (both confirmatory
+  verdicts NULL), no random-time-control phase is opened by this pass,
+  and validation/holdout stay locked. The screening statistics record
+  that small real effects exist in opposite directions per market —
+  descriptive honesty only, zero promotion power by construction.

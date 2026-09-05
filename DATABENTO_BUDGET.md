@@ -63,6 +63,15 @@ GLBX-20260904-YTWSXK7WDK ($0.008394). Both containers are ZIPs of
 per-UTC-day .dbn.zst members. Verify after any restore:
 `certutil -hashfile data\\databento\\<file> SHA256`.
 
+### Guard-(c) cloud-dump fixtures (git-ignored dir; zero-cost, regenerable via `python d49_nq_dump_cloud.py <tag>` — QuantConnect cloud minutes only, no Databento spend)
+
+| tag | window | bytes | sha256 (prefix) |
+|---|---|---|---|
+| dump_nq-holiday.json | NQ 2024-11-15..12-05 | 60,801 | 63a5259481d92cc5 |
+| dump_nq-roll.json | NQ 2024-12-16..12-30 (roll + Christmas) | 44,147 | 0fc6edd4b0c6453c |
+| dump_gc-roll.json | GC 2020-01-15..01-31 (roll + MLK) | 45,279 | 5050e94550814408 |
+| dump_gc-roll-b.json | GC 2020-02-01..02-14 (LEAN events) | 34,058 | 974d420286f7bddf |
+
 ## Known quotes (context, not commitments)
 
 - Parent symbology `NQ.FUT,GC.FUT` 2010-06-07→2025-01-01: **$71.04**
@@ -72,8 +81,10 @@ per-UTC-day .dbn.zst members. Verify after any restore:
   was the cost decision; re-quotes shift daily as the end date rolls.
 - ES/YM/RTY were deliberately NOT included in this purchase (design
   decision deferred, not an accident of the download).
-- Guard (c) extension point: the local QC bundle covers gc (comex) and es
-  (cme) minutes; the 2013-10 GC weekday block is the live reconciliation
-  window. NQ has no local QC coverage — ES rides the same CME-Globex
-  consolidation code path and is the designated extension point for the
-  index-complex side when needed.
+- Guard (c) coverage (updated 2026-09-04, pre-study): the local QC bundle
+  covers gc (comex) ordinary weekdays 2013-10 and es (cme) — reconciled:
+  gc only. NQ and every ROLL window are now reconciled against LEAN
+  itself via the zero-cost cloud dumps above (permanent tests
+  QcCloudReconciliation). ES remains named-but-unreconciled; adding an
+  es-dump window to d49's RUNS is the open extension point if ES ever
+  enters scope (it is NOT part of C2-ONLT-v1's population).

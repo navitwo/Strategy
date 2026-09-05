@@ -611,3 +611,117 @@ after matched side and empirical slots change the dispersion.
   byte-exact generator_v1 gate. Full suites re-run after every edit.
 - No strategy backtest, no optimization, no validation/holdout read — the
   purchase holds that data under the same committed-flag discipline.
+## 2026-09-04 — Guard (c) closed on NQ + roll windows via cloud dumps; date-gate self-audit; C2 local dev pass executed
+
+- Directive: guard (c) had validated GC ordinary weekdays only; NQ (half
+  of C2, CME Globex, different sessions/holidays/rolls) was never
+  reconciled, and the "ES extension point" was a plan, not a check.
+  Closed with one short zero-cost data-dump backtest per window on the
+  QuantConnect cloud (c2_nq_dump_main.py via d49_nq_dump_cloud.py —
+  subscription already paid, zero orders/signals; dedicated dump
+  project 36123316 after the archived campaign engine's fail-closed
+  variant guard correctly rejected an accidental misdirected
+  submission). Transport lesson: RuntimeStatistics string values
+  SILENTLY truncate at 200 chars (94/676 rows survived a first
+  attempt); bars ride chart series ("dump-bars", o/h/l/c/t) with
+  declared-count polling — the C1 bulk channel, proven at 1,121 rows.
+- MEASURED reconciliation (permanent tests QcCloudReconciliation;
+  fixtures git-ignored under data/databento/, sha256s + windows in
+  DATABENTO_BUDGET.md):
+  * NQ 2024-11-15..12-05 (676 bars): 673/676 BIT-EXACT vs local path,
+    zero tick-contract violations, Thanksgiving/Black-Friday early
+    closes exercised, zero rolls.
+  * NQ 2024-12-16..12-30 (488 bars, ends 12-30 so no bar belongs to
+    the 2025-01-01 validation session; _fixture_or_skip asserts every
+    fixture free of post-DEV_END sessions): ROLL + Christmas. Vendor
+    ROLL-TIME DIVERGENCE found and asserted as measured: Databento
+    NQZ4→H5 switched 2024-12-18 19:00 ET; LEAN's OPEN_INTEREST event
+    fired 2024-12-19 00:00 — SAME trade session; 9 divergent slots
+    (the Z4/H5 spread), everything else bit-exact.
+    (An earlier ASSUMED 2024-11-25 NQ roll was FALSE — caught by
+    measurement before any claim was committed, same class of defect
+    as the 0.45R anchor.)
+  * GC 2020-01-15..01-31 + 02-01..02-14 (roll + MLK; local bundle has
+    NO GC files near 2020-01-23 — the cloud is the only GC-roll
+    coverage): larger divergence — Databento rolled GCG0→GCJ0
+    2020-01-23 19:00 ET while LEAN's depth-0 series held G0 until its
+    2020-02-06/07 events (~2 weeks). Every bar where both sit on the
+    SAME contract is BIT-EXACT (pre-roll and post-convergence: max
+    diff 0.00) — the disagreement is the OI rule's clock, not bar
+    arithmetic. GC 13:00 ET close confirmed measured (MLK RTH ends
+    13:00; 12 bars in session 2020-01-20).
+  * Corruption bound asserted end-to-end on real data
+    (test_roll_discontinuity_cannot_corrupt_levels_real_data): GC roll
+    lands exactly on a 30-min slot boundary (19:00), so no mixed slot
+    exists — the ONLY protection between a two-contract overnight and
+    a published event is on_rollover itself, and on these dates the
+    contracts traded ~65 ticks apart. Asserted: roll session
+    2020-01-24 publishes ZERO events; every other event's level equals
+    an independently recomputed SINGLE-CONTRACT overnight high/low.
+- Date-gate self-audit (DateGateSelfAudit): static AST audit of every
+  repo .py — raw decode primitives only in READER_ALLOWLIST, no
+  unlocked=True outside sanctioned files, unlocked= arguments must be
+  the committed flag (AST-level: string literals and comments can't
+  fake it), VALIDATION_UNLOCK rebind/mutation/globals()-write banned
+  outside its one sanctioned definition; negative test constructs each
+  bypass and proves the audit goes RED; allowlist-rot and
+  check-before-decode ordering guards included. The study runner goes
+  through dld.session_rows (the sanctioned accessor), which is exactly
+  what the audit enforces.
+- qc_api latent bug fixed at first no-parameter caller: backtest_create
+  raised KeyError 'parameters' when parameters=None (payload["parameters"]
+  instead of .get) — every prior launcher passed parameters, so the line
+  was never exercised. Crash was client-side, before any HTTP request;
+  no orphan backtest. Permanent-behavior note: backtests/create without
+  compileId errors; status strings carry a trailing period ("Completed.").
+- C2-ONLT-v1 local DEV pass executed (c2_local_study.py,
+  c2_local_study.json + printed funnel-first report; level-entry
+  primary, declared sensitivities reported per §4/§6b: optimistic
+  target-first ambiguity and touch-bar-close entry; signed forward R at
+  30/60/120/240 and MFE/MAE in the transport rows; sessions < n
+  asserted; PREREG §3a(c-extension) records the cloud reconciliation).
+  SELF-REVIEW during the pass caught and fixed an estimand inconsistency
+  before finalizing: the point estimate was event-weighted while the CI
+  resampled cluster means — point now = mean of cluster means, same
+  estimator as the interval (NQ point 0.0536R vs 0.0800R descriptive;
+  verdicts unchanged).
+  FUNNEL (dev 2010-06-07..2024-12-31):
+    NQ: 147,990 bars, 59 rolls, 0 mixed slots, 3,071 touch candidates,
+         38 ATR-floor rejects (retention 98.76%), 3,033 events,
+         2,570 sessions.
+    GC: 171,550 bars, 72 rolls, 0 mixed slots, 2,471 candidates,
+         3 ATR-floor rejects (retention 99.88%), 2,468 events,
+         2,370 sessions.
+    Both n >> frozen gate 800; realized contrast sd 1.2604R (NQ) /
+    0.9315R (GC) BELOW the anchored central 1.6015R — no stand-down
+    condition fires; the anchored grid at realized sd gives
+    minimum_passing_n 800 (NQ) / 400 (GC), consistent with the frozen
+    800 requirement, which both pass at 3-4x.
+  VERDICTS (primary cell T2S0.5 @120m, pessimistic, θ=0.2R, clustered
+  bootstrap seed C2-ONLT-v1-local-pass-1):
+    Primary A (NQ):  point +0.0536R, CI95 [+0.0052, +0.0997] —
+                     confirmatory NULL; screening: significant vs zero
+                     but inside θ ⇒ significant_not_tradable.
+    Primary B (GC):  point −0.0878R, CI95 [−0.1226, −0.0532] —
+                     confirmatory NULL; screening: significant vs zero
+                     in the CONTINUATION direction, inside θ ⇒
+                     significant_not_tradable.
+    Pooled equal-market point −0.0171R — descriptive only, never a
+    verdict, and it hides the two opposite-sign market results —
+     exactly the dilution the pre-data A/B split amendment prevented.
+  Declared sensitivities (reported, not verdicts): optimistic
+  target-first NQ +0.015R / GC −0.145R; touch-bar-close entry NQ
+  −0.021R / GC −0.131R. Neither crosses θ; no label changes.
+- Permanent ledger test (test_campaign2_ledger.py, 6 green): re-derives
+  counts/dispersion/sessions from the committed event rows, re-
+  classifies both verdicts from their own stored CIs (label drift
+  impossible by construction), checks payoff bounds inside the frozen
+  T2S0.5 table, enforces the ledger-side date gate (no event on a post-
+  DEV_END session), and re-computes the stand-down list from the gate
+  arithmetic.
+- Suite state: 22 guard tests + 6 ledger tests + event-generator +
+  chronology suites all green; py_compile clean. No optimization, no
+  parameter selection, no second look; validation and holdout remain
+  locked and unread (DEV_END gate enforced in code, in the fixtures,
+  and in the committed ledger). No Databento spend (cloud dumps cost
+  subscription minutes only).
